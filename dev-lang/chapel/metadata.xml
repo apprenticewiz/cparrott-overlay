@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Chapel is an open-source parallel programming language designed for
+		productive computing at scale. This ebuild follows the AUR chapel
+		package (configure --prefix=/usr, make, make install) and uses a
+		system LLVM, GMP, hwloc, jemalloc, and libunwind instead of the
+		copies bundled in third-party/.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/chapel-lang/chapel/issues</bugs-to>
+		<remote-id type="github">chapel-lang/chapel</remote-id>
+	</upstream>
+</pkgmetadata>

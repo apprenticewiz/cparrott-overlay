@@ -71,10 +71,18 @@ chapel_env() {
 	export CHPL_TARGET_JEMALLOC=system
 	export CHPL_HOST_MEM=cstdlib
 	export CHPL_HOST_JEMALLOC=none
+	# util/chplenv/chpl_compiler.py maps a command to a compiler family by
+	# basename and only knows gcc/g++, clang/clang++, xlc, icc and pgcc.
+	# /usr/bin/cc resolves to family "unknown" and aborts printchplenv, so
+	# name the family outright instead of letting Chapel infer it.
+	if tc-is-clang; then
+		export CHPL_HOST_COMPILER=clang
+	else
+		export CHPL_HOST_COMPILER=gnu
+	fi
 	export CHPL_HOST_CC="$(tc-getCC)"
 	export CHPL_HOST_CXX="$(tc-getCXX)"
 	export CHPL_MAKE=make
-	export CHPL_CMAKE_USE_CC_CXX=1
 	export CHPL_CMAKE_PYTHON="${EPYTHON}"
 }
 

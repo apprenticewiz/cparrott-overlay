@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		DMD is the reference compiler for the D programming language.
+		This package follows Arch Linux extra/dmd: the compiler is built
+		from the dlang/dmd tag, and the Phobos standard library plus
+		Druntime live in <pkg>dev-libs/libphobos</pkg>. Bootstrapping uses
+		gdc from <pkg>sys-devel/gcc</pkg> with the D language enabled,
+		wrapped by gdmd so that compiler/src/build.d can use dmd-style flags.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/dlang/dmd/issues</bugs-to>
+		<remote-id type="github">dlang/dmd</remote-id>
+	</upstream>
+</pkgmetadata>

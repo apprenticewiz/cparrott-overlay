@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Phobos is the D standard library and Druntime is the D language
+		runtime. This package matches Arch extra/libphobos: headers under
+		/usr/include/dlang/dmd and libraries in the system libdir,
+		consumed by <pkg>dev-lang/dmd</pkg> via /etc/dmd.conf.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/dlang/phobos/issues</bugs-to>
+		<remote-id type="github">dlang/phobos</remote-id>
+	</upstream>
+</pkgmetadata>

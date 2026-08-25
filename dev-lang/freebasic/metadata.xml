@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<longdescription lang="en">
+		FreeBASIC is an open-source, multi-platform BASIC compiler (fbc) with
+		syntax similar to Microsoft QuickBASIC. It adds pointers, object
+		orientation, unsigned types, inline assembly, and bindings for many
+		third-party libraries. The compiler is written in FreeBASIC. A first
+		install uses <pkg>dev-lang/freebasic-bootstrap</pkg>; rebuilds use
+		the installed fbc.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://sourceforge.net/p/fbc/bugs/</bugs-to>
+		<remote-id type="github">freebasic/fbc</remote-id>
+		<remote-id type="sourceforge">fbc</remote-id>
+	</upstream>
+</pkgmetadata>

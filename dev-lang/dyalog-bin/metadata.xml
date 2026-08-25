@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<use>
+		<flag name="dotnet">Enable .NET bridge support using <pkg>virtual/dotnet-sdk</pkg></flag>
+		<flag name="odbc">Enable SQAPL / ODBC support using <pkg>dev-db/unixODBC</pkg></flag>
+	</use>
+	<longdescription lang="en">
+		Binary package of the Dyalog APL interpreter (Unicode, 64-bit),
+		based on the Arch Linux AUR dyalog-bin package. The interpreter
+		is installed under /opt/mdyalog so that vendor scripts keep
+		working. Dyalog is proprietary; unregistered use is for
+		non-commercial evaluation only.
+	</longdescription>
+</pkgmetadata>

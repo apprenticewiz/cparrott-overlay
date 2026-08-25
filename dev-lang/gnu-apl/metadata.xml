@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<use>
+		<flag name="erlang">Build the Erlang interface (also builds libapl.so)</flag>
+		<flag name="fftw">Enable ⎕FFT using <pkg>sci-libs/fftw</pkg></flag>
+		<flag name="gsl">Enable ⎕MX and extra linear algebra using <pkg>sci-libs/gsl</pkg></flag>
+		<flag name="gtk3">Enable ⎕GTK using <pkg>x11-libs/gtk+</pkg>:3</flag>
+		<flag name="libapl">Build the libapl.so shared library</flag>
+		<flag name="pcre2">Enable ⎕RE using <pkg>dev-libs/libpcre2</pkg></flag>
+		<flag name="png">Enable ⎕PNG using <pkg>media-libs/libpng</pkg></flag>
+		<flag name="postgresql">Enable PostgreSQL support in ⎕SQL</flag>
+		<flag name="python">Build the Python extension lib_gnu_apl.so</flag>
+		<flag name="sqlite3">Enable SQLite support in ⎕SQL</flag>
+	</use>
+	<upstream>
+		<bugs-to>https://lists.gnu.org/mailman/listinfo/bug-apl</bugs-to>
+		<remote-id type="savannah">apl</remote-id>
+	</upstream>
+</pkgmetadata>

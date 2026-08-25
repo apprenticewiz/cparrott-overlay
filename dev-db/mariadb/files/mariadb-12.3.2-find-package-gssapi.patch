@@ -1,0 +1,34 @@
+diff -Nru orig/libmariadb/CMakeLists.txt new/libmariadb/CMakeLists.txt
+--- orig/libmariadb/CMakeLists.txt	2026-08-24 15:51:19.037538516 -0700
++++ new/libmariadb/CMakeLists.txt	2026-08-24 15:51:19.061039358 -0700
+@@ -5,6 +5,7 @@
+ CMAKE_MINIMUM_REQUIRED(VERSION 3.12.0 FATAL_ERROR)
+ 
+ INCLUDE(CheckFunctionExists)
++INCLUDE(FeatureSummary)
+ # CMP0077 defaults to NEW since cmake 3.13; can drop when minimum is bumped
+ CMAKE_POLICY(SET CMP0077 NEW)
+ 
+@@ -431,7 +432,8 @@
+ ENDIF()
+ IF(NOT WIN32)
+   IF(NOT AUTH_GSSAPI_PLUGIN_TYPE MATCHES "OFF")
+-    INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
++    FIND_PACKAGE(GSSAPI)
++    SET_PACKAGE_PROPERTIES(GSSAPI PROPERTIES TYPE OPTIONAL)
+     IF(GSSAPI_FOUND)
+       INCLUDE_DIRECTORIES(${GSSAPI_INCS})
+       IF(AUTH_GSSAPI_PLUGIN_TYPE MATCHES "STATIC")
+diff -Nru orig/libmariadb/plugins/auth/CMakeLists.txt new/libmariadb/plugins/auth/CMakeLists.txt
+--- orig/libmariadb/plugins/auth/CMakeLists.txt	2026-08-24 15:51:19.039530623 -0700
++++ new/libmariadb/plugins/auth/CMakeLists.txt	2026-08-24 15:51:19.061124164 -0700
+@@ -124,7 +124,8 @@
+ 
+ #GSSAPI client authentication plugin
+ IF(NOT WIN32)
+-  INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
++  FIND_PACKAGE(GSSAPI)
++  SET_PACKAGE_PROPERTIES(GSSAPI PROPERTIES TYPE OPTIONAL)
+   IF(GSSAPI_FOUND)
+     SET(GSSAPI_SOURCES ${AUTH_DIR}/auth_gssapi_client.c ${AUTH_DIR}/gssapi_client.c ${AUTH_DIR}/gssapi_errmsg.c)
+     IF (CMAKE_VERSION VERSION_GREATER 3.18)

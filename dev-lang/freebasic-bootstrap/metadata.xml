@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<longdescription lang="en">
+		Bootstrap compiler built from FreeBASIC's pre-translated C sources.
+		Used only to compile <pkg>dev-lang/freebasic</pkg> on systems that do
+		not already have fbc. It is not meant for writing BASIC programs.
+	</longdescription>
+	<upstream>
+		<remote-id type="github">freebasic/fbc</remote-id>
+		<remote-id type="sourceforge">fbc</remote-id>
+	</upstream>
+</pkgmetadata>

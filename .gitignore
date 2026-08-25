@@ -1,0 +1,8 @@
+# Portage/pkgcore regenerate this; do not track it.
+/metadata/md5-cache/
+
+# Editor and interpreter leftovers
+*~
+*.swp
+*.swo
+.apl.history

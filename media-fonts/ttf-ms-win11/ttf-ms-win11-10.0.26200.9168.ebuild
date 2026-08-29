@@ -13,10 +13,13 @@ LICENSE="all-rights-reserved"
 SLOT="0"
 KEYWORDS="~amd64"
 IUSE="japanese korean other sea thai zhcn zhtw"
-RESTRICT="bindist fetch mirror"
+RESTRICT="bindist mirror"
 
-# Distfiles cannot be mirrored. Place the font files and license.rtf in
-# DISTDIR (filenames are case-sensitive; they match the Arch AUR package).
+# The fonts cannot be fetched or mirrored. Place them and license.rtf in
+# ${PORTAGE_ACTUAL_DISTDIR}/${PN} (typically /var/cache/distfiles/ttf-ms-win11).
+# Filenames are case-sensitive and match the AUR package. Portage points
+# DISTDIR at a per-package symlink farm holding only SRC_URI files, so
+# PORTAGE_ACTUAL_DISTDIR is what has to be searched.
 
 FONT_SUFFIX="ttf ttc"
 
@@ -132,7 +135,11 @@ ttf_ms_win11_required() {
 	use other && printf '%s\n' "${TTF_MS_WIN11_OTHER[@]}"
 }
 
-pkg_nofetch() {
+ttf_ms_win11_srcdir() {
+	echo "${PORTAGE_ACTUAL_DISTDIR:-${DISTDIR}}/${PN}"
+}
+
+ttf_ms_win11_instructions() {
 	eerror "Microsoft Windows fonts cannot be downloaded by Portage."
 	eerror "Using them outside Windows may be prohibited by Microsoft's EULA;"
 	eerror "read that license before installing."
@@ -147,7 +154,7 @@ pkg_nofetch() {
 	eerror '    --dest-dir fonts'
 	eerror
 	eerror "Copy every required file (names are case-sensitive) plus license.rtf"
-	eerror "into your distfiles directory."
+	eerror "into $(ttf_ms_win11_srcdir) (not the top of distfiles)."
 	eerror "This USE combination needs:"
 	local f
 	while IFS= read -r f; do
@@ -156,23 +163,25 @@ pkg_nofetch() {
 }
 
 src_unpack() {
-	local f missing=()
+	local f srcdir missing=()
 
+	srcdir=$(ttf_ms_win11_srcdir)
 	mkdir -p "${S}" || die
 	while IFS= read -r f; do
-		if [[ -f ${DISTDIR}/${f} ]]; then
-			cp "${DISTDIR}/${f}" "${S}/" || die "failed to copy ${f}"
+		if [[ -f ${srcdir}/${f} ]]; then
+			cp "${srcdir}/${f}" "${S}/" || die "failed to copy ${f}"
 		else
 			missing+=( "${f}" )
 		fi
 	done < <(ttf_ms_win11_required)
 
 	if (( ${#missing[@]} )); then
-		eerror "Missing ${#missing[@]} file(s) in ${DISTDIR}:"
+		eerror "Missing ${#missing[@]} file(s) in ${srcdir}:"
 		for f in "${missing[@]}"; do
 			eerror "  ${f}"
 		done
-		die "Windows 11 font files are not in DISTDIR; see ebuild comments"
+		ttf_ms_win11_instructions
+		die "Windows 11 font files are not in ${srcdir}"
 	fi
 }
 

@@ -8,9 +8,10 @@
 	<longdescription lang="en">
 		Windows 11 system fonts packaged like the Arch AUR ttf-ms-win11
 		split. Portage cannot fetch the files; copy them from a licensed
-		Windows 11 install or ISO into DISTDIR. Extra CJK and regional
-		families are optional USE flags matching the AUR subpackages.
-		These fonts are proprietary; redistribution is not allowed.
+		Windows 11 install or ISO into DISTDIR/ttf-ms-win11 (typically
+		/var/cache/distfiles/ttf-ms-win11). Extra CJK and regional families
+		are optional USE flags matching the AUR subpackages. These fonts
+		are proprietary; redistribution is not allowed.
 	</longdescription>
 	<use>
 		<flag name="japanese">Install Japanese fonts (MS Gothic, Yu Gothic)</flag>

@@ -6,3 +6,5 @@
 *.swp
 *.swo
 .apl.history
+__pycache__/
+*.pyc

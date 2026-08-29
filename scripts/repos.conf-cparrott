@@ -1,0 +1,13 @@
+# Install as root:
+#   cp scripts/repos.conf-cparrott /etc/portage/repos.conf/cparrott.conf
+# Then remove the old [local] block from repos.conf/eselect-repo.conf
+# and (optional) rm -rf /var/db/repos/local
+#
+# Do not point this at overlays/local. That tree is the working copy.
+# Portage should only see the GitHub clone under /var/db/repos/cparrott.
+
+[cparrott]
+location = /var/db/repos/cparrott
+sync-type = git
+sync-uri = https://github.com/cparrott/cparrott-overlay.git
+auto-sync = yes

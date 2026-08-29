@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Apple's Monaco monospaced font as packaged by the Arch AUR
+		ttf-monaco package, with extra special characters from
+		taodongl/monaco.ttf. Monaco is proprietary; redistribution
+		is not allowed.
+	</longdescription>
+	<upstream>
+		<remote-id type="github">taodongl/monaco.ttf</remote-id>
+	</upstream>
+</pkgmetadata>

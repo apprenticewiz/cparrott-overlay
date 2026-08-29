@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Apple's San Francisco (SF Pro, SF Compact, SF Mono) and New York
+		typefaces, packaged like the Arch AUR apple-fonts package. The
+		DMGs are fetched from Apple's CDN and unpacked with 7-Zip.
+		Redistribution of the font files is not allowed.
+	</longdescription>
+	<upstream>
+		<doc>https://developer.apple.com/fonts/</doc>
+	</upstream>
+</pkgmetadata>

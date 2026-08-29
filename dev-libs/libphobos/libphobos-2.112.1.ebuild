@@ -22,18 +22,37 @@ LICENSE="Boost-1.0"
 SLOT="0/112"
 KEYWORDS="~amd64"
 
-# Built with the matching DMD; no runtime dep on the compiler.
-BDEPEND="~dev-lang/dmd-${PV}"
+# dmd-bootstrap is listed first so a first install does not pull dev-lang/dmd,
+# which depends on this package. Rebuilds use an installed dmd of the same
+# version, so dmd-bootstrap can be depcleaned afterwards.
+BDEPEND="
+	|| (
+		~dev-lang/dmd-bootstrap-${PV}
+		~dev-lang/dmd-${PV}
+	)
+"
 RDEPEND="net-misc/curl"
 
 src_compile() {
 	filter-lto
 
 	local dmd_src="${WORKDIR}/dmd-${PV}"
+	local dmd
+
+	# Prefer an installed dmd of the same version; fall back to the bootstrap.
+	# Both are invoked with -conf= by these makefiles, so neither reads a
+	# dmd.conf and the half-installed libphobos in ROOT is never picked up.
+	if has_version -b "~dev-lang/dmd-${PV}"; then
+		dmd="${BROOT}/usr/bin/dmd"
+	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
+		dmd="${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
+	else
+		die "Need ~dev-lang/dmd-${PV} or ~dev-lang/dmd-bootstrap-${PV}"
+	fi
 
 	# Arch: make -f posix.mak in druntime then phobos.
 	emake -C "${dmd_src}/druntime" \
-		DMD="$(type -P dmd)" \
+		DMD="${dmd}" \
 		CC="$(tc-getCC)" \
 		BUILD=release \
 		ENABLE_RELEASE=1 \
@@ -41,7 +60,7 @@ src_compile() {
 		OS=linux
 
 	emake \
-		DMD="$(type -P dmd)" \
+		DMD="${dmd}" \
 		DMD_DIR="${dmd_src}" \
 		CC="$(tc-getCC)" \
 		BUILD=release \

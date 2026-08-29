@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription>
+		Armed Bear Common Lisp (ABCL) is an implementation of ANSI Common
+		Lisp that runs in a Java virtual machine. This overlay copy adds the
+		--add-opens flags ABCL needs to reflect into java.base on JDK 9 and
+		later.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://abcl.org/trac/report/1</bugs-to>
+		<remote-id type="github">armedbear/abcl</remote-id>
+	</upstream>
+</pkgmetadata>

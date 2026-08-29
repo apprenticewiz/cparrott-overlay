@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Swift compiler and toolchain, ported from GURU. 5.10.1 is the last
+		release that can be built from C++ with a three-stage Clang bootstrap.
+		6.3.3 needs a host Swift (5.10.1 or an installed 6.3). Toolchains live
+		under /usr/lib*/swift-* and eselect-swift owns /usr/bin/swift.
+	</longdescription>
+	<use>
+		<flag name="libcxx">
+			Build against llvm-runtimes/libcxx as the default C++ runtime
+			instead of GCC's libstdc++.
+		</flag>
+	</use>
+	<slots>
+		<slot name="5">
+			The Swift 5 language, compiler, and tooling.
+		</slot>
+		<slot name="6">
+			The Swift 6 language, compiler, and tooling.
+		</slot>
+		<subslots>
+			Minor Swift versions.
+		</subslots>
+	</slots>
+	<upstream>
+		<bugs-to>https://github.com/swiftlang/swift/issues</bugs-to>
+		<remote-id type="github">swiftlang/swift</remote-id>
+		<doc>https://www.swift.org</doc>
+	</upstream>
+</pkgmetadata>

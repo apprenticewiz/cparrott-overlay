@@ -1,0 +1,174 @@
+diff -ruN squeak-clean/Cross/plugins/AsynchFilePlugin/AsynchFilePlugin.h squeak-patched/Cross/plugins/AsynchFilePlugin/AsynchFilePlugin.h
+--- squeak-clean/Cross/plugins/AsynchFilePlugin/AsynchFilePlugin.h	2006-09-14 10:52:45.000000000 -0700
++++ squeak-patched/Cross/plugins/AsynchFilePlugin/AsynchFilePlugin.h	2026-08-27 00:50:50.061039215 -0700
+@@ -10,9 +10,9 @@
+ } AsyncFile;
+ 
+ int asyncFileClose(AsyncFile *f);
+-int asyncFileOpen(AsyncFile *f, int fileNamePtr, int fileNameSize, int writeFlag, int semaIndex);
++int asyncFileOpen(AsyncFile *f, char *fileNamePtr, int fileNameSize, int writeFlag, int semaIndex);
+ int asyncFileRecordSize();
+-int asyncFileReadResult(AsyncFile *f, int bufferPtr, int bufferSize);
++int asyncFileReadResult(AsyncFile *f, char *bufferPtr, int bufferSize);
+ int asyncFileReadStart(AsyncFile *f, int fPosition, int count);
+ int asyncFileWriteResult(AsyncFile *f);
+-int asyncFileWriteStart(AsyncFile *f, int fPosition, int bufferPtr, int bufferSize);
++int asyncFileWriteStart(AsyncFile *f, int fPosition, char *bufferPtr, int bufferSize);
+diff -ruN squeak-clean/Cross/plugins/Squeak3D/b3dMain.c squeak-patched/Cross/plugins/Squeak3D/b3dMain.c
+--- squeak-clean/Cross/plugins/Squeak3D/b3dMain.c	2006-09-14 10:52:42.000000000 -0700
++++ squeak-patched/Cross/plugins/Squeak3D/b3dMain.c	2026-08-27 00:50:50.061396468 -0700
+@@ -63,7 +63,7 @@
+ /*************************************************************/
+ 
+ void b3dAbort(char *msg){
+-	printf(msg);
++	printf("%s", msg);
+ 	exit(-1);
+ }
+ 
+diff -ruN squeak-clean/unix/CMakeLists.txt squeak-patched/unix/CMakeLists.txt
+--- squeak-clean/unix/CMakeLists.txt	2012-09-16 18:03:14.000000000 -0700
++++ squeak-patched/unix/CMakeLists.txt	2026-08-27 00:50:50.060886876 -0700
+@@ -2,9 +2,9 @@
+ # 
+ # Last edited: 2012-09-16 21:19:57 by piumarta on linux64
+ 
+-PROJECT (squeak)
++CMAKE_MINIMUM_REQUIRED (VERSION 3.10)
+ 
+-CMAKE_MINIMUM_REQUIRED (VERSION 2.6.2)
++PROJECT (squeak)
+ 
+ IF (NOT DEFINED VM_HOST OR NOT DEFINED VM_VERSION)
+   MESSAGE (FATAL_ERROR "
+@@ -103,13 +103,6 @@
+   SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I/usr/pkg/include")
+ ENDIF (EXISTS /usr/pkg/include)
+ 
+-IF (EXISTS /usr/local/include)
+-  SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I/usr/local/include")
+-ENDIF (EXISTS /usr/local/include)
+-
+-IF (EXISTS /usr/local/lib)
+-  SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -L/usr/local/lib")
+-ENDIF (EXISTS /usr/local/lib)
+ 
+ MESSAGE (STATUS "Using CFLAGS ${CMAKE_C_FLAGS}")
+ 
+@@ -155,7 +148,6 @@
+ 
+ BUILD_PLUGINS ()
+ 
+-ADD_SUBDIRECTORY (${unix}/npsqueak)
+ 
+ SET (cmake ${unix}/../../cmake)
+ 
+diff -ruN squeak-clean/unix/cmake/Plugins.cmake squeak-patched/unix/cmake/Plugins.cmake
+--- squeak-clean/unix/cmake/Plugins.cmake	2011-01-26 19:16:32.000000000 -0800
++++ squeak-patched/unix/cmake/Plugins.cmake	2026-08-27 00:50:50.060967845 -0700
+@@ -94,11 +94,11 @@
+       FILE_APPEND (${bld}/${plugin}/config.cmake ${dir}/${plugin}/config.cmake)
+     ENDFOREACH (dir)
+     #MESSAGE ("-- plugin ${plugin}")
+-    IF (${plugins_list} STREQUAL "plugins_int")
++    IF ("${plugins_list}" STREQUAL "plugins_int")
+       SET (plugin_target "vm")
+     ELSE ()
+       SET (plugin_target "${plugin}")
+-    ENDIF (${plugins_list} STREQUAL "plugins_int")
++    ENDIF ("${plugins_list}" STREQUAL "plugins_int")
+     SET (plugin_disabled)
+     INCLUDE (${bld}/${plugin}/config.cmake)
+     IF (without-${plugin})
+@@ -106,15 +106,15 @@
+     ENDIF ()
+     IF (DEFINED plugin_disabled)
+       LIST (REMOVE_ITEM ${plugins_list} ${plugin})
+-      IF (${plugins_list} STREQUAL "plugins_int")
++      IF ("${plugins_list}" STREQUAL "plugins_int")
+         LIST (APPEND plugins_dis ${plugin})
+-      ENDIF (${plugins_list} STREQUAL "plugins_int")
++      ENDIF ("${plugins_list}" STREQUAL "plugins_int")
+       MESSAGE ("!! ${plugin} disabled")
+       SET (${plugin}_disabled 1)
+     ELSE (DEFINED plugin_disabled)
+-      IF (${plugins_list} STREQUAL "plugins_int")
++      IF ("${plugins_list}" STREQUAL "plugins_int")
+         USE_LIBRARY (${plugin})
+-      ENDIF (${plugins_list} STREQUAL "plugins_int")
++      ENDIF ("${plugins_list}" STREQUAL "plugins_int")
+       SET (${plugin}_disabled)
+     ENDIF (DEFINED plugin_disabled)
+   ENDFOREACH (plugin)
+diff -ruN squeak-clean/unix/plugins/AsynchFilePlugin/sqUnixAsynchFile.c squeak-patched/unix/plugins/AsynchFilePlugin/sqUnixAsynchFile.c
+--- squeak-clean/unix/plugins/AsynchFilePlugin/sqUnixAsynchFile.c	2006-10-18 10:10:25.000000000 -0700
++++ squeak-patched/unix/plugins/AsynchFilePlugin/sqUnixAsynchFile.c	2026-08-27 00:50:50.061185774 -0700
+@@ -142,7 +142,7 @@
+   return fp;
+ }
+ 
+-INLINE static allocateBuffer(struct FileBuf *buf, int size)
++INLINE static int allocateBuffer(struct FileBuf *buf, int size)
+ {
+   if (buf->capacity >= size)
+     return 1;
+@@ -184,7 +184,7 @@
+ /*** public functions ***/
+ 
+ 
+-int asyncFileOpen(AsyncFile *f, int fileNamePtr, int fileNameSize,
++int asyncFileOpen(AsyncFile *f, char *fileNamePtr, int fileNameSize,
+ 		  int writeFlag, int semaIndex)
+ {
+   int fd= 0;
+@@ -239,7 +239,7 @@
+ }
+ 
+ 
+-int asyncFileReadResult(AsyncFile *f, int bufferPtr, int bufferSize)
++int asyncFileReadResult(AsyncFile *f, char *bufferPtr, int bufferSize)
+ {
+   FilePtr fp= 0;
+   int n= 0;
+@@ -333,7 +333,7 @@
+ }
+ 
+ 
+-int asyncFileWriteStart(AsyncFile *f, int fPosition, int bufferPtr, int count)
++int asyncFileWriteStart(AsyncFile *f, int fPosition, char *bufferPtr, int count)
+ {
+   FilePtr fp= 0;
+   validate(f);
+diff -ruN squeak-clean/unix/src/vm/intplugins/FilePlugin/FilePlugin.c squeak-patched/unix/src/vm/intplugins/FilePlugin/FilePlugin.c
+--- squeak-clean/unix/src/vm/intplugins/FilePlugin/FilePlugin.c	2012-07-30 17:00:57.000000000 -0700
++++ squeak-patched/unix/src/vm/intplugins/FilePlugin/FilePlugin.c	2026-08-27 00:50:50.061295099 -0700
+@@ -734,7 +734,7 @@
+ 			return interpreterProxy->primitiveFail();
+ 		}
+ 	}
+-	validMask = sqFileStdioHandlesInto((&fileRecords));
++	validMask = sqFileStdioHandlesInto(fileRecords);
+ 	if (validMask == 0) {
+ 		return interpreterProxy->primitiveFail();
+ 	}
+diff -ruN squeak-clean/unix/src/vm/intplugins/RePlugin/RePlugin.c squeak-patched/unix/src/vm/intplugins/RePlugin/RePlugin.c
+--- squeak-clean/unix/src/vm/intplugins/RePlugin/RePlugin.c	2012-07-30 17:00:57.000000000 -0700
++++ squeak-patched/unix/src/vm/intplugins/RePlugin/RePlugin.c	2026-08-27 00:53:22.867150842 -0700
+@@ -252,7 +252,7 @@
+ 	/* begin rcvrExtraPtr */
+ 	extraObj = interpreterProxy->fetchPointerofObject(3, rcvr);
+ 	if (extraObj == (interpreterProxy->nilObject())) {
+-		extraPtr =  NULL;
++		extraPtr =  0;
+ 		goto l1;
+ 	}
+ 	extraPtr = ((int) (interpreterProxy->arrayValueOf(extraObj)));
+@@ -317,7 +317,7 @@
+ 	/* begin rcvrExtraPtr */
+ 	extraObj = interpreterProxy->fetchPointerofObject(3, rcvr);
+ 	if (extraObj == (interpreterProxy->nilObject())) {
+-		extraPtr =  NULL;
++		extraPtr =  0;
+ 		goto l1;
+ 	}
+ 	extraPtr = ((int) (interpreterProxy->arrayValueOf(extraObj)));

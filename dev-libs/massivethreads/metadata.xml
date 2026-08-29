@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		MassiveThreads is a lightweight user-level thread library from
+		the University of Tokyo. SML# links against it for fine-grain
+		multicore support. This ebuild follows AUR massivethreads 1.02:
+		the GitHub v1.02 tarball and a standard autotools install.
+	</longdescription>
+	<use>
+		<flag name="sqlite">Link optional sqlite support when headers are present</flag>
+	</use>
+	<upstream>
+		<bugs-to>https://github.com/massivethreads/massivethreads/issues</bugs-to>
+		<remote-id type="github">massivethreads/massivethreads</remote-id>
+		<doc>https://massivethreads.github.io/massivethreads/reference/</doc>
+	</upstream>
+</pkgmetadata>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Self-contained DMD compiler plus Phobos/Druntime, built from source
+		with gdc by the overlay's scripts/dmd-bootstrap-tarball.sh. It
+		exists only to compile <pkg>dev-lang/dmd</pkg> and
+		<pkg>dev-libs/libphobos</pkg>, which are otherwise a dependency
+		cycle. It is not meant for writing D programs; use
+		<pkg>dev-lang/dmd</pkg> for that.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/dlang/dmd/issues</bugs-to>
+		<remote-id type="github">dlang/dmd</remote-id>
+	</upstream>
+</pkgmetadata>

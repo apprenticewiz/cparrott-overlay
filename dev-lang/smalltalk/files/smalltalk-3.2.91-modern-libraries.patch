@@ -1,0 +1,58 @@
+Fix declarations for current iconv and Expat, and generate a valid pkg-config
+file.  The old Expat callback prototype can corrupt the call frame at runtime.
+
+--- a/packages/iconv/iconv.c
++++ b/packages/iconv/iconv.c
+@@ -66,7 +66,7 @@ iconvWrapper (iconv_t handle, OOP readBufferOOP, int readPos,
+ 	      int readCount, OOP writeBufferOOP, int writeCount,
+ 	      OOP bytesLeftOOP)
+ {
+-  const char *inbuf;
++  char *inbuf;
+   size_t inbytesleft;
+   char *outbuf;
+   size_t outbytesleft;
+--- a/packages/xml/expat/expat.c
++++ b/packages/xml/expat/expat.c
+@@ -478,7 +478,8 @@ gst_EndNamespaceDeclHandler (void *userData,
+ 
+ static void
+ gst_SkippedEntityHandler (void *userData,
+-			  const XML_Char * entityName)
++			  const XML_Char * entityName,
++			  int isParameterEntity)
+ {
+   XML_Parser p = userData;
+   OOP parserOOP = XML_GetUserData (p);
+@@ -487,6 +488,7 @@ gst_SkippedEntityHandler (void *userData,
+ 	      vmProxy->stringToOOP (entityName),
+ 	      NULL);
+ 
++  (void) isParameterEntity;
+   XML_StopParser (p, 1);
+ }
+ 
+--- a/gnu-smalltalk.pc.in
++++ b/gnu-smalltalk.pc.in
+@@ -1,12 +1,12 @@
+-prefix = @prefix@
+-exec_prefix = @exec_prefix@
+-libdir = @libdir@
+-pkglibdir = ${libdir}/@PACKAGE@
+-datarootdir = @datarootdir@
+-datadir = @datadir@
+-pkgdatadir = ${datadir}/@PACKAGE@
+-moduledir = @moduledir@
+-includedir = @includedir@
++prefix=@prefix@
++exec_prefix=@exec_prefix@
++libdir=@libdir@
++pkglibdir=${libdir}/@PACKAGE@
++datarootdir=@datarootdir@
++datadir=@datadir@
++pkgdatadir=${datadir}/@PACKAGE@
++moduledir=@moduledir@
++includedir=@includedir@
+ 
+ Name: gnu-smalltalk
+ Description: GNU Smalltalk

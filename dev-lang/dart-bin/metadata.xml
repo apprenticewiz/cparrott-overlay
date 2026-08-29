@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Google's official prebuilt Dart SDK for Linux x64, installed to
+		/opt/dart-sdk with dart and dartaotruntime symlinked into PATH.
+		Only a binary package is provided: building the SDK from source
+		requires gclient to fetch its DEPS tree during the build, which
+		cannot be done under Portage's network sandbox.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/dart-lang/sdk/issues</bugs-to>
+		<remote-id type="github">dart-lang/sdk</remote-id>
+	</upstream>
+</pkgmetadata>

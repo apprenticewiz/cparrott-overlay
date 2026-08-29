@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Odin is a general-purpose, data-oriented programming language with
+		a batteries-included core library. This ebuild follows Arch extra/odin
+		dev_2026_08: the monthly upstream tag, a clang/LLVM build of the
+		compiler, and installation of the binary next to base, core, shared,
+		and vendor under /usr/lib/odin. LLVM 17-22 are accepted (Arch pins 21).
+		System miniaudio and stb are not used; those collections stay vendored
+		and their Unix static libraries are built at compile time.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/odin-lang/Odin/issues</bugs-to>
+		<remote-id type="github">odin-lang/Odin</remote-id>
+		<doc>https://odin-lang.org/docs/</doc>
+	</upstream>
+</pkgmetadata>

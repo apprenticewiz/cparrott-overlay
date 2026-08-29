@@ -1,0 +1,19 @@
+#!/bin/sh
+
+SQUEAK_DIR=/usr/lib/squeak/4.10.2-2614
+SCRATCH_DIR=/usr/lib/scratch
+
+export SQUEAK_FAKEBIGCURSOR="${SQUEAK_FAKEBIGCURSOR:-0}"
+export SQUEAK_SECUREDIR="${SQUEAK_SECUREDIR:-${HOME}/.scratch/private}"
+export SQUEAK_USERDIR="${SQUEAK_USERDIR:-${HOME}/Scratch}"
+
+mkdir -p "${SQUEAK_SECUREDIR}" "${SQUEAK_USERDIR}" || exit 1
+chmod 700 "${SQUEAK_SECUREDIR}" || exit 1
+
+exec "${SQUEAK_DIR}/squeakvm" \
+	-encoding UTF-8 \
+	-vm-display-X11 \
+	-vm-sound-pulse \
+	-plugins "${SCRATCH_DIR}/Plugins:${SQUEAK_DIR}" \
+	"${SCRATCH_DIR}/Scratch.image" \
+	"$@"

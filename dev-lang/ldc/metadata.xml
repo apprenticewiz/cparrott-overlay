@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		LDC is a D compiler based on the LLVM infrastructure. This package
+		follows Arch extra/ldc's cmake/ninja build, but uses
+		<pkg>dev-lang/dmd</pkg> as the first host compiler instead of a
+		pre-existing ldc (Arch self-hosts). The runtime and Phobos
+		(Arch's liblphobos) are produced by the same cmake build using the
+		just-built ldc2, so they are installed here rather than as a
+		separate package. LLVM 15–21 are supported; the default slot is
+		21, the newest LDC 1.42 accepts.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/ldc-developers/ldc/issues</bugs-to>
+		<remote-id type="github">ldc-developers/ldc</remote-id>
+	</upstream>
+</pkgmetadata>

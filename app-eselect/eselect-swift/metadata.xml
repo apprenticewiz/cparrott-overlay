@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		eselect module that points /usr/bin/swift, swiftc, and sourcekit-lsp
+		at a slotted Swift toolchain under /usr/lib*/swift-*. Ported from
+		GURU's app-eselect/eselect-swift.
+	</longdescription>
+</pkgmetadata>

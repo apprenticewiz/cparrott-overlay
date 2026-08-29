@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<use>
+		<flag name="dotty">Install legacy Dotty aliases (dotr, dotc, dotd)</flag>
+	</use>
+	<longdescription lang="en">
+		Scala 3 (Dotty) packaged from the official compiler tarball, matching
+		AUR scala3/scala-dotty. The tree is installed under /usr/share/scala3
+		with versioned launchers scala3, scalac3, and scaladoc3 so Scala 2
+		from dev-lang/scala-bin can remain on PATH. USE=dotty adds the old
+		dotr/dotc/dotd names. This is not a from-source build: the compiler
+		bootstrap needs Coursier/sbt downloads that Portage cannot perform
+		in the network sandbox. Scala 3.8 requires a JRE 17 or newer.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/scala/scala3/issues</bugs-to>
+		<remote-id type="github">scala/scala3</remote-id>
+		<doc>https://docs.scala-lang.org/</doc>
+	</upstream>
+</pkgmetadata>

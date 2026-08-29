@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Scratch 1.4 is the classic Squeak-based visual programming
+		environment. This package follows Arch Linux's scratch package and
+		builds its native Unicode, camera, WeDo and Scratch plugins.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/scratchfoundation/scratch-flash/issues</bugs-to>
+		<doc>https://en.scratch-wiki.info/wiki/Scratch_1.4</doc>
+	</upstream>
+</pkgmetadata>

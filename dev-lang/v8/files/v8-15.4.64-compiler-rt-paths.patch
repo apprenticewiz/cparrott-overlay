@@ -1,0 +1,32 @@
+Make Chromium's clang_lib template find Gentoo's compiler-rt.
+
+Gentoo builds llvm-runtimes/compiler-rt with the legacy runtime layout
+(lib/clang/N/lib/linux/libclang_rt.builtins-<arch>.a), while Chromium
+hardcodes the per-target layout used by its own clang packages.  Same
+change as Arch's compiler-rt-adjust-paths.patch, extended to the other
+Linux arches.
+
+--- a/build/config/clang/BUILD.gn
++++ b/build/config/clang/BUILD.gn
+@@ -200,13 +200,17 @@
+         _dir = "darwin"
+       } else if (is_linux || is_chromeos) {
+         if (current_cpu == "x64") {
+-          _dir = "x86_64-unknown-linux-gnu"
++          _dir = "linux"
++          _suffix = "-x86_64"
+         } else if (current_cpu == "x86") {
+-          _dir = "i386-unknown-linux-gnu"
++          _dir = "linux"
++          _suffix = "-i386"
+         } else if (current_cpu == "arm") {
+-          _dir = "armv7-unknown-linux-gnueabihf"
++          _dir = "linux"
++          _suffix = "-armhf"
+         } else if (current_cpu == "arm64") {
+-          _dir = "aarch64-unknown-linux-gnu"
++          _dir = "linux"
++          _suffix = "-aarch64"
+         } else if (current_cpu == "loong64") {
+           _dir = "loongarch64-unknown-linux-gnu"
+         } else if (current_cpu == "riscv64") {

@@ -1,0 +1,22 @@
+glibc 2.43 turns bsearch into a type-generic macro (__glibc_const_generic,
+guarded by __GLIBC_USE (ISOC23), which _GNU_SOURCE enables regardless of
+-std=gnu17). That macro breaks the plain prototype h/protoize.h carries for
+GCL's own bsearch:
+
+  ../h/../h/protoize.h:106:35: error: expected identifier or '(' before '_Generic'
+    106 | /* bsearch.c:5:OF */ extern void *bsearch (const void *key, ...
+
+GCL only ever wants the ordinary function, so drop the macro before the
+prototype is parsed. h/include.h is the single place every translation unit
+picks protoize.h up from.
+
+--- a/h/include.h
++++ b/h/include.h
+@@ -118,6 +118,7 @@
+ #include "../h/lex.h"
+ #include "../h/eval.h"
+ 
++#undef bsearch
+ #include "../h/protoize.h"
+ #include "../h/compprotos.h"
+ #include "../h/notcomp.h"

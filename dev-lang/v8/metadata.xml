@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Google's V8 JavaScript and WebAssembly engine, version 15.4.64.
+		Packaging follows AUR v8-r (GN component build, system ICU, system
+		Clang, d8 plus shared libraries and pkg-config files) with the extra
+		git DEPS V8 15 requires (abseil, partition_alloc, highway, and so
+		on). CIPD/GCS toolchains are not used: gn, ninja, lld, and clang
+		come from Gentoo. Temporal/Rust support is off so the bundled Rust
+		sysroot is not required. The V8 sandbox is disabled because it
+		demands hardened libc++, which conflicts with linking against
+		libstdc++.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://issues.chromium.org/issues?q=componentid:1451040</bugs-to>
+		<remote-id type="github">v8/v8</remote-id>
+		<doc>https://v8.dev/docs</doc>
+	</upstream>
+</pkgmetadata>

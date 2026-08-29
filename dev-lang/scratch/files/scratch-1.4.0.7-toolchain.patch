@@ -1,0 +1,67 @@
+diff -ruN scratch-clean/src/plugins/camera/Makefile scratch-patched/src/plugins/camera/Makefile
+--- scratch-clean/src/plugins/camera/Makefile	2011-10-18 14:24:46.000000000 -0700
++++ scratch-patched/src/plugins/camera/Makefile	2026-08-27 00:51:52.343146000 -0700
+@@ -1,8 +1,8 @@
+ all: clean build
+ 
+ build:	
+-	gcc $(CFLAGS) -fPIC -c *.c
+-	gcc -shared *.o -o ../../../Plugins/so.CameraPlugin
++	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -c *.c
++	$(CC) $(LDFLAGS) -shared *.o -o ../../../Plugins/so.CameraPlugin
+ 
+ clean:
+ 	rm -f *.o ../../../Plugins/so.CameraPlugin
+diff -ruN scratch-clean/src/plugins/scratch/Makefile scratch-patched/src/plugins/scratch/Makefile
+--- scratch-clean/src/plugins/scratch/Makefile	2011-06-03 07:56:20.000000000 -0700
++++ scratch-patched/src/plugins/scratch/Makefile	2026-08-27 00:51:52.343007648 -0700
+@@ -1,8 +1,8 @@
+ all: clean build
+ 
+ build:	
+-	gcc $(CFLAGS) -fPIC -c *.c
+-	gcc -shared *.o -o ../../../Plugins/so.ScratchPlugin
++	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -c *.c
++	$(CC) $(LDFLAGS) -shared *.o -o ../../../Plugins/so.ScratchPlugin
+ 
+ clean:
+ 	rm -f *.o ../../../Plugins/so.ScratchPlugin
+diff -ruN scratch-clean/src/plugins/unicode/Makefile scratch-patched/src/plugins/unicode/Makefile
+--- scratch-clean/src/plugins/unicode/Makefile	2011-06-03 07:56:20.000000000 -0700
++++ scratch-patched/src/plugins/unicode/Makefile	2026-08-27 00:55:22.496428457 -0700
+@@ -1,8 +1,8 @@
+ all: clean build
+ 
+ build:	
+-	gcc $(CFLAGS) -fPIC -c `pkg-config --cflags pangocairo` *.c 
+-	gcc -shared `pkg-config --libs pangocairo` -lc *.o -o ../../../Plugins/so.UnicodePlugin
++	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -c `pkg-config --cflags pangocairo` *.c 
++	$(CC) $(LDFLAGS) -shared *.o `pkg-config --libs pangocairo` -lc -o ../../../Plugins/so.UnicodePlugin
+ 
+ clean:
+ 	rm -f *.o ../../../Plugins/so.UnicodePlugin
+diff -ruN scratch-clean/src/plugins/wedo/Makefile scratch-patched/src/plugins/wedo/Makefile
+--- scratch-clean/src/plugins/wedo/Makefile	2011-06-03 07:56:20.000000000 -0700
++++ scratch-patched/src/plugins/wedo/Makefile	2026-08-27 00:55:22.496352317 -0700
+@@ -1,8 +1,8 @@
+ all: clean build
+ 
+ build:	
+-	gcc $(CFLAGS) -fPIC -Wall -c -O2 *.c
+-	gcc -shared *.o -o ../../../Plugins/so.WeDoPlugin
++	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -Wall -c *.c
++	$(CC) $(LDFLAGS) -shared *.o -o ../../../Plugins/so.WeDoPlugin
+ 
+ clean:
+ 	rm -f *.o ../../../Plugins/so.WeDoPlugin
+diff -ruN scratch-clean/src/plugins/wedo/WeDoLinux.c scratch-patched/src/plugins/wedo/WeDoLinux.c
+--- scratch-clean/src/plugins/wedo/WeDoLinux.c	2011-05-25 11:53:42.000000000 -0700
++++ scratch-patched/src/plugins/wedo/WeDoLinux.c	2026-08-27 00:51:52.343270385 -0700
+@@ -29,6 +29,7 @@
+  */
+ 
+ #include <stdio.h>
++#include <unistd.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <time.h>

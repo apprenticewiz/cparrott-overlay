@@ -1,0 +1,3 @@
+#!/bin/sh
+# Component-build d8 lives next to the shared objects.
+exec /usr/libexec/v8/d8 "$@"

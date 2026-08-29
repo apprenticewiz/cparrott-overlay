@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		pgloader loads data into PostgreSQL using COPY. This overlay package
+		uses the official pgloader-bundle tarball (vendored Common Lisp
+		libraries) and dumps a binary with SBCL, so the GURU Common Lisp
+		stack is not required. MySQL/MariaDB is handled by qmynd (Lisp
+		protocol), not libmysqlclient. A named-readtables patch is included
+		for SBCL 2.6.5 and later.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/dimitri/pgloader/issues</bugs-to>
+		<remote-id type="github">dimitri/pgloader</remote-id>
+		<doc>https://pgloader.readthedocs.io/</doc>
+	</upstream>
+</pkgmetadata>

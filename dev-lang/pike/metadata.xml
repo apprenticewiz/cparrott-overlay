@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<use>
+		<flag name="fftw">Build the Math.FFT module against <pkg>sci-libs/fftw</pkg></flag>
+		<flag name="fuse">Build the Fuse module against FUSE 2</flag>
+		<flag name="glut">Build the GLUT OpenGL module</flag>
+		<flag name="gtk">Build the GTK2 GUI module</flag>
+		<flag name="mysql">Build the Mysql module</flag>
+		<flag name="odbc">Build the Odbc module against <pkg>dev-db/libiodbc</pkg></flag>
+		<flag name="postgres">Build the Postgres module</flag>
+		<flag name="sane">Build the SANE scanner module</flag>
+		<flag name="sdl">Build the SDL module with SDL_mixer</flag>
+	</use>
+	<longdescription lang="en">
+		Pike is a dynamic programming language with a syntax similar to Java
+		and C. This ebuild follows AUR pike 8.0.1956-2: the official Lysator
+		tarball, GNU90 plus no LTO (LTO makes configure think it is on
+		macOS), and a C23 true/false workaround in HTTPLoop. Unlike the AUR
+		build it keeps the profile libdir instead of forcing /usr/lib,
+		because the interpreter records its master.pike path at configure
+		time and refuses to start if the tree is moved afterwards. Optional
+		AUR makedepends are USE flags rather than hard build dependencies.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://git.lysator.liu.se/pikelang/pike/-/issues</bugs-to>
+		<remote-id type="github">pikelang/Pike</remote-id>
+		<doc>https://pike.lysator.liu.se/docs/</doc>
+	</upstream>
+</pkgmetadata>

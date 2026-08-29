@@ -10,6 +10,8 @@
 		runtime. This package matches Arch extra/libphobos: headers under
 		/usr/include/dlang/dmd and libraries in the system libdir,
 		consumed by <pkg>dev-lang/dmd</pkg> via /etc/dmd.conf.
+		Compiled with <pkg>dev-lang/dmd-bootstrap</pkg> so it can be
+		installed before dmd.
 	</longdescription>
 	<upstream>
 		<bugs-to>https://github.com/dlang/phobos/issues</bugs-to>

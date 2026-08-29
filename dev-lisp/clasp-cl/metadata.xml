@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Clasp is a Common Lisp implementation that compiles to native code
+		with LLVM and interops with C++. This ebuild follows AUR clasp-cl
+		3.0.1: the official release tarball, koga --skip-sync, and ninja
+		install. The host Lisp is SBCL. LLVM 15-20 and 22 are supported
+		upstream; 21 is skipped for an API break, and llvm-r2 drops slots
+		older than 17.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/clasp-developers/clasp/issues</bugs-to>
+		<remote-id type="github">clasp-developers/clasp</remote-id>
+		<doc>https://clasp-developers.github.io/manual.html</doc>
+	</upstream>
+</pkgmetadata>

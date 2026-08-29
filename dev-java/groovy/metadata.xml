@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Apache Groovy, packaged from the official binary zip like Arch
+		extra/groovy. Launchers go on PATH with GROOVY_HOME set to
+		/usr/share/groovy. Groovy 5 runs on JDK 11 and later.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://issues.apache.org/jira/browse/GROOVY</bugs-to>
+		<remote-id type="github">apache/groovy</remote-id>
+	</upstream>
+</pkgmetadata>

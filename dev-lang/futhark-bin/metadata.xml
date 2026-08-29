@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Official prebuilt Futhark compiler for Linux x86_64, matching
+		AUR futhark-bin. The tarball is statically linked and installs
+		the futhark binary plus man pages. Building from source needs a
+		Haskell toolchain, which this overlay does not package.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/diku-dk/futhark/issues</bugs-to>
+		<remote-id type="github">diku-dk/futhark</remote-id>
+	</upstream>
+</pkgmetadata>

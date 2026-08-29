@@ -1,0 +1,53 @@
+From 54f500823bce93ccd6c31e74b37ef21420f32c50 Mon Sep 17 00:00:00 2001
+From: Holger Hans Peter Freyther <holger@freyther.de>
+Date: Sun, 18 Sep 2016 10:17:51 +0200
+Subject: [PATCH] libgst: Do not re-define yylineno with newer versions of flex
+
+Correct the upstream patch's YY_FLEX_MAJORY_VERSION typo while applying it.
+---
+ libgst/genbc-scan.l | 2 +-
+ libgst/genpr-scan.l | 2 +-
+ libgst/genvm-scan.l | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/libgst/genbc-scan.l b/libgst/genbc-scan.l
+index 86169e6e..6ac540aa 100644
+--- a/libgst/genbc-scan.l
++++ b/libgst/genbc-scan.l
+@@ -70,7 +70,7 @@ static Filament *literal_fil;
+ static Filament *literal_fil;
+ static int from = 0, depth = 0;
+ 
+-#if !defined YY_FLEX_SUBMINOR_VERSION || YY_FLEX_SUBMINOR_VERSION < 31
++#if !defined YY_FLEX_MAJOR_VERSION || (YY_FLEX_MAJOR_VERSION == 2 && YY_FLEX_MINOR_VERSION == 5 && YY_FLEX_SUBMINOR_VERSION < 31)
+ int yylineno = 1;
+ #endif
+ 
+diff --git a/libgst/genpr-scan.l b/libgst/genpr-scan.l
+index cbdff7a9..be8ac6db 100644
+--- a/libgst/genpr-scan.l
++++ b/libgst/genpr-scan.l
+@@ -64,7 +64,7 @@
+ #include "genpr-parse.h"
+ 
+ static int from = 0, depth = 0;
+-#if !defined YY_FLEX_SUBMINOR_VERSION || YY_FLEX_SUBMINOR_VERSION < 31
++#if !defined YY_FLEX_MAJOR_VERSION || (YY_FLEX_MAJOR_VERSION == 2 && YY_FLEX_MINOR_VERSION == 5 && YY_FLEX_SUBMINOR_VERSION < 31)
+ int yylineno = 1;
+ #endif
+ 
+diff --git a/libgst/genvm-scan.l b/libgst/genvm-scan.l
+index 3c8b35d0..5657f987 100644
+--- a/libgst/genvm-scan.l
++++ b/libgst/genvm-scan.l
+@@ -65,7 +65,7 @@
+ #include "genvm-parse.h"
+ 
+ static int from = 0, depth = 0;
+-#if !defined YY_FLEX_SUBMINOR_VERSION || YY_FLEX_SUBMINOR_VERSION < 31
++#if !defined YY_FLEX_MAJOR_VERSION || (YY_FLEX_MAJOR_VERSION == 2 && YY_FLEX_MINOR_VERSION == 5 && YY_FLEX_SUBMINOR_VERSION < 31)
+ int yylineno = 1;
+ #endif
+ %}
+-- 
+2.51.0

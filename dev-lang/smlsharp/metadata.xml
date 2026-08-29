@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		SML# is a Standard ML compiler with seamless C interop, SQL
+		integration, and MassiveThreads-based multicore support. This
+		ebuild follows AUR smlsharp 4.2.0: the official release tarball,
+		system MassiveThreads and GMP, and LLVM 17-20 (upstream's
+		configure allows 7.1-20.1; llvm-r2 starts at 17).
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/smlsharp/smlsharp/issues</bugs-to>
+		<remote-id type="github">smlsharp/smlsharp</remote-id>
+		<doc>https://smlsharp.github.io/en/documents/4.2.0/</doc>
+	</upstream>
+</pkgmetadata>

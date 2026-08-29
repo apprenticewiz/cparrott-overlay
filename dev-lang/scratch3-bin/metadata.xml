@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Scratch 3 desktop as a prebuilt Electron app. Official Scratch Desktop
+		has no Linux download, so this follows Arch's scratch3-bin: take the
+		Windows installer's app.asar and static assets and run them with a
+		matching official Electron Linux zip. Coexists with Scratch 1.4
+		(dev-lang/scratch), which uses a different binary name.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/scratchfoundation/scratch-desktop/issues</bugs-to>
+		<remote-id type="github">scratchfoundation/scratch-desktop</remote-id>
+		<doc>https://scratch.mit.edu/download</doc>
+	</upstream>
+</pkgmetadata>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		GNU Smalltalk is an implementation of the Smalltalk-80 language and
+		environment. It includes an interpreter, image and package management
+		tools, a class library, and bindings for common system libraries.
+	</longdescription>
+	<use>
+		<flag name="test">Run the upstream regression test suite</flag>
+	</use>
+	<upstream>
+		<bugs-to>mailto:help-smalltalk@gnu.org</bugs-to>
+		<changelog>https://git.savannah.gnu.org/cgit/smalltalk.git/log/</changelog>
+		<doc>https://www.gnu.org/software/smalltalk/manual/</doc>
+		<remote-id type="github">gnu-smalltalk/smalltalk</remote-id>
+	</upstream>
+</pkgmetadata>

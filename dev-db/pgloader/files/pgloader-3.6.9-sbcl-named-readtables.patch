@@ -1,0 +1,37 @@
+Fix named-readtables iterator on SBCL 2.6.5+.
+
+https://github.com/dimitri/pgloader/issues/1703
+
+--- a/software/named-readtables-20220220-git/src/cruft.lisp
++++ b/software/named-readtables-20220220-git/src/cruft.lisp
+@@ -212,14 +212,14 @@
+                      (let ((reader-fn (svref char-macro-array char-code))
+                            (char (code-char (shiftf char-code (1+ char-code)))))
+                        (if reader-fn
+-                           (yield char)
++                           (yield char #'grovel-base-chars)
+                            (grovel-base-chars)))))
+                (grovel-unicode-chars ()
+                  (multiple-value-bind (more? char) (ht-iterator)
+                    (if (not more?)
+                        (values nil nil nil nil nil)
+-                       (yield char))))
+-               (yield (char)
++                       (yield char #'grovel-unicode-chars))))
++               (yield (char continue-fn)
+                  (let ((disp-fn (get-macro-character char readtable))
+                        (disp-ht))
+                    (cond
+@@ -229,8 +229,11 @@
+                                    (push (cons k v) sub-char-alist))
+                                  disp-ht)
+                         (values t char disp-fn t sub-char-alist)))
++                     (disp-fn
++                      (values t char disp-fn nil nil))
+                      (t
+-                      (values t char disp-fn nil nil))))))
++                      ;; Not a real macro character, continue iterating
++                      (funcall continue-fn))))))
+         #'grovel-base-chars))))
+ #+clozure
+ (defun %make-readtable-iterator (readtable)

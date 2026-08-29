@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		This is the classic Unix Squeak VM used by Scratch 1.4. The package
+		follows Arch Linux's squeak-vm package while carrying compatibility
+		fixes for CMake 4 and current C compilers.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/OpenSmalltalk/opensmalltalk-vm/issues</bugs-to>
+		<remote-id type="github">OpenSmalltalk/opensmalltalk-vm</remote-id>
+		<doc>https://wiki.squeak.org/squeak</doc>
+	</upstream>
+</pkgmetadata>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="project">
+		<email>maintainer-needed@gentoo.org</email>
+		<name>Gentoo Maintainer Needed</name>
+	</maintainer>
+	<longdescription lang="en">
+		Mojo is a systems programming language designed for heterogeneous
+		computing. It combines Python-like syntax with compile-time
+		metaprogramming, ownership checking, and direct CPU and accelerator
+		programming.
+	</longdescription>
+	<upstream>
+		<remote-id type="github">modular/modular</remote-id>
+	</upstream>
+</pkgmetadata>

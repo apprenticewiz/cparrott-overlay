@@ -5,17 +5,11 @@ EAPI=8
 
 inherit flag-o-matic multiprocessing toolchain-funcs
 
-# Arch extra/dmd uses HOST_DMD=ldmd2 (ldc). We bootstrap with gdc instead:
-# compiler/src/build.d expects dmd-style flags, so wrap gdc with gdmd.
-GDMD_PV="0.26.0"
-
 DESCRIPTION="The D programming language reference compiler"
 HOMEPAGE="https://dlang.org/"
 SRC_URI="
 	https://github.com/dlang/dmd/archive/refs/tags/v${PV}.tar.gz
 		-> ${P}.tar.gz
-	https://github.com/D-Programming-GDC/gdmd/archive/refs/tags/script-${GDMD_PV}.tar.gz
-		-> gdmd-${GDMD_PV}.tar.gz
 "
 S="${WORKDIR}/dmd-${PV}"
 
@@ -23,14 +17,19 @@ LICENSE="Boost-1.0"
 SLOT="0"
 KEYWORDS="~amd64"
 
-# The dmd binary is built by gdc and links against gcc's libgphobos, so it
-# needs nothing from dev-libs/libphobos to run. libphobos is in turn compiled
-# by this dmd, so the dependency has to be a PDEPEND to break the cycle.
-RDEPEND=">=sys-devel/gcc-9"
-PDEPEND="~dev-libs/libphobos-${PV}"
+# libphobos is built with dmd-bootstrap, so it can be a real build+runtime
+# dep here without a cycle. Rebuilds of dmd use the installed compiler;
+# a first install pulls dmd-bootstrap.
+RDEPEND="
+	>=sys-devel/gcc-9
+	~dev-libs/libphobos-${PV}
+"
+DEPEND="${RDEPEND}"
 BDEPEND="
-	dev-lang/perl
-	>=sys-devel/gcc-9[d]
+	|| (
+		>=dev-lang/dmd-${PV}
+		~dev-lang/dmd-bootstrap-${PV}
+	)
 "
 
 src_prepare() {
@@ -39,38 +38,26 @@ src_prepare() {
 	sed -i 's/\.git/.nope/' compiler/src/build.d || die
 }
 
-# gdmd looks for a 'gdc' binary in the same directory as itself.
 host_dmd() {
-	local host="${T}/hostd"
-	local gdc
-
-	if [[ ! -x ${host}/gdmd ]]; then
-		if [[ ${CBUILD} != "${CHOST}" ]] && type -P "${CBUILD}-gdc" >/dev/null; then
-			gdc=$(type -P "${CBUILD}-gdc")
-		elif type -P "${CHOST}-gdc" >/dev/null; then
-			gdc=$(type -P "${CHOST}-gdc")
-		else
-			gdc=$(type -P gdc) || die "gdc not found; need sys-devel/gcc[d]"
-		fi
-		mkdir -p "${host}" || die
-		ln -s "${gdc}" "${host}/gdc" || die
-		cp "${WORKDIR}/gdmd-script-${GDMD_PV}/dmd-script" "${host}/gdmd" || die
-		chmod +x "${host}/gdmd" || die
+	if has_version -b ">=dev-lang/dmd-${PV}"; then
+		echo "${BROOT}/usr/bin/dmd"
+	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
+		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
+	else
+		die "Need >=dev-lang/dmd-${PV} or dmd-bootstrap"
 	fi
-	echo "${host}/gdmd"
 }
 
 src_compile() {
 	filter-lto
 
-	local host_dmd
+	local host_dmd stage1
 	host_dmd="$(host_dmd)"
 
 	mkdir -p generated || die
 	# Arch: $HOST_DMD -ofgenerated/build -g compiler/src/build.d -release -O
 	"${host_dmd}" -ofgenerated/build -g compiler/src/build.d -release -O || die
 
-	# Arch: generated/build BUILD=release HOST_DMD=... CXX=c++ ENABLE_RELEASE=1 dmd
 	generated/build \
 		BUILD=release \
 		HOST_DMD="${host_dmd}" \
@@ -80,7 +67,29 @@ src_compile() {
 		-j"$(makeopts_jobs)" \
 		dmd || die
 
-	emake -C compiler/docs DMD="${host_dmd}"
+	# Self-host: recompile with the stage1 binary. Point it at system
+	# libphobos (already installed) via a dmd.conf next to the executable.
+	stage1="${T}/stage1"
+	mkdir -p "${stage1}" || die
+	cp "$(find generated/linux/release -name dmd -type f -print -quit)" "${stage1}/dmd" || die
+	chmod +x "${stage1}/dmd" || die
+	local inc="${EPREFIX}/usr/include/dlang/dmd"
+	local lib="${EPREFIX}/usr/$(get_libdir)"
+	local dflags="-I${inc} -L-L${lib} -L--export-dynamic -fPIC"
+	printf '%s\n' '[Environment64]' "DFLAGS=${dflags}" > "${stage1}/dmd.conf" || die
+
+	"${stage1}/dmd" -ofgenerated/build -g compiler/src/build.d -release -O || die
+	generated/build \
+		--force \
+		BUILD=release \
+		HOST_DMD="${stage1}/dmd" \
+		CXX="$(tc-getCXX)" \
+		ENABLE_RELEASE=1 \
+		SYSCONFDIR="${EPREFIX}/etc" \
+		-j"$(makeopts_jobs)" \
+		dmd || die
+
+	emake -C compiler/docs DMD="${stage1}/dmd"
 }
 
 src_install() {
@@ -106,6 +115,10 @@ src_install() {
 }
 
 pkg_postinst() {
-	elog "dmd reads ${EPREFIX}/etc/dmd.conf for import and library paths."
-	elog "Those paths are provided by dev-libs/libphobos."
+	elog "dmd reads ${EPREFIX}/etc/dmd.conf for its import and library paths."
+	elog "Those paths are provided by dev-libs/libphobos, which contains"
+	elog "Druntime and the Phobos standard library. Compiling D programs"
+	elog "needs it, so emerge it if it is not already installed:"
+	elog ""
+	elog "    emerge --ask dev-libs/libphobos"
 }

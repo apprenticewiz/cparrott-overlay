@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		Windows 11 system fonts packaged like the Arch AUR ttf-ms-win11
+		split. Portage cannot fetch the files; copy them from a licensed
+		Windows 11 install or ISO into DISTDIR. Extra CJK and regional
+		families are optional USE flags matching the AUR subpackages.
+		These fonts are proprietary; redistribution is not allowed.
+	</longdescription>
+	<use>
+		<flag name="japanese">Install Japanese fonts (MS Gothic, Yu Gothic)</flag>
+		<flag name="korean">Install Korean fonts (Malgun Gothic)</flag>
+		<flag name="sea">Install Southeast Asian fonts (Nirmala UI, Myanmar Text, and related)</flag>
+		<flag name="thai">Install Thai fonts (Leelawadee UI)</flag>
+		<flag name="zhcn">Install Simplified Chinese fonts (SimSun, Microsoft YaHei)</flag>
+		<flag name="zhtw">Install Traditional Chinese fonts (Microsoft JhengHei, MingLiU)</flag>
+		<flag name="other">Install remaining Windows 11 fonts (Ebrima, Gadugi, MV Boli)</flag>
+	</use>
+	<upstream>
+		<doc>https://aur.archlinux.org/packages/ttf-ms-win11</doc>
+	</upstream>
+</pkgmetadata>

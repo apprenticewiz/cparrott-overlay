@@ -27,8 +27,8 @@ RDEPEND="
 DEPEND="${RDEPEND}"
 BDEPEND="
 	|| (
-		>=dev-lang/dmd-${PV}
-		>=dev-lang/dmd-bootstrap-2.112.1
+		dev-lang/dmd
+		dev-lang/dmd-bootstrap
 	)
 "
 
@@ -44,7 +44,7 @@ host_dmd() {
 	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
 		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
 	else
-		die "Need >=dev-lang/dmd-${PV} or dmd-bootstrap"
+		die "Need dev-lang/dmd or dev-lang/dmd-bootstrap"
 	fi
 }
 

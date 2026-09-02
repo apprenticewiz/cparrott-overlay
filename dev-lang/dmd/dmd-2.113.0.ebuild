@@ -17,10 +17,6 @@ LICENSE="Boost-1.0"
 SLOT="0"
 KEYWORDS="~amd64"
 
-# libphobos is built with dmd-bootstrap (it must not depend on dmd, or
-# Portage sees a cycle). Rebuilds of dmd use the installed compiler; a
-# first install pulls dmd-bootstrap. There is no 2.113 bootstrap tarball;
-# 2.112.1 is enough as HOST_DMD.
 RDEPEND="
 	>=sys-devel/gcc-9
 	~dev-libs/libphobos-${PV}
@@ -28,8 +24,8 @@ RDEPEND="
 DEPEND="${RDEPEND}"
 BDEPEND="
 	|| (
-		>=dev-lang/dmd-${PV}
-		>=dev-lang/dmd-bootstrap-2.112.1
+		dev-lang/dmd
+		dev-lang/dmd-bootstrap
 	)
 "
 
@@ -45,7 +41,7 @@ host_dmd() {
 	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
 		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
 	else
-		die "Need >=dev-lang/dmd-${PV} or dmd-bootstrap"
+		die "Need dev-lang/dmd or dev-lang/dmd-bootstrap"
 	fi
 }
 

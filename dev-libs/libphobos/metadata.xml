@@ -11,7 +11,10 @@
 		/usr/include/dlang/dmd and libraries in the system libdir,
 		consumed by <pkg>dev-lang/dmd</pkg> via /etc/dmd.conf.
 		Compiled with <pkg>dev-lang/dmd-bootstrap</pkg> so it can be
-		installed before dmd.
+		installed before dmd. Because a release's Druntime and Phobos
+		need a compiler of that same release, this package builds a
+		throwaway stage1 dmd from the bundled compiler source and uses
+		it for the runtime.
 	</longdescription>
 	<upstream>
 		<bugs-to>https://github.com/dlang/phobos/issues</bugs-to>

@@ -20,7 +20,12 @@ KEYWORDS="~amd64"
 RDEPEND=">=sys-devel/gcc-9"
 DEPEND="${RDEPEND}"
 PDEPEND="~dev-libs/libphobos-${PV}"
-BDEPEND="dev-lang/dmd-bootstrap"
+BDEPEND="
+	|| (
+		dev-lang/dmd-bootstrap
+		<dev-lang/dmd-${PV}
+	)
+"
 
 src_prepare() {
 	default
@@ -29,7 +34,7 @@ src_prepare() {
 }
 
 host_dmd() {
-	if has_version -b ">=dev-lang/dmd-${PV}"; then
+	if [[ -x ${BROOT}/usr/bin/dmd ]]; then
 		echo "${BROOT}/usr/bin/dmd"
 	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
 		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"

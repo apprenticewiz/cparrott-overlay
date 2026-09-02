@@ -23,7 +23,7 @@ PDEPEND="~dev-libs/libphobos-${PV}"
 BDEPEND="
 	|| (
 		dev-lang/dmd-bootstrap
-		dev-lang/dmd
+		<dev-lang/dmd-${PV}
 	)
 "
 
@@ -34,7 +34,7 @@ src_prepare() {
 }
 
 host_dmd() {
-	if has_version -b ">=dev-lang/dmd-2.112.1" && [[ -x ${BROOT}/usr/bin/dmd ]]; then
+	if [[ -x ${BROOT}/usr/bin/dmd ]]; then
 		echo "${BROOT}/usr/bin/dmd"
 	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
 		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"

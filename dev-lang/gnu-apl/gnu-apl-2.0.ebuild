@@ -19,7 +19,7 @@ IUSE="erlang fftw gsl gtk3 libapl +pcre2 +png postgresql python-module +sqlite3 
 
 REQUIRED_USE="
 	erlang? ( libapl )
-	python? ( ${PYTHON_REQUIRED_USE} )
+	python-module? ( ${PYTHON_REQUIRED_USE} )
 "
 
 RDEPEND="
@@ -33,7 +33,7 @@ RDEPEND="
 		virtual/zlib:=
 	)
 	postgresql? ( dev-db/postgresql:= )
-	python? ( ${PYTHON_DEPS} )
+	python-module? ( ${PYTHON_DEPS} )
 	sqlite3? ( dev-db/sqlite:3 )
 	erlang? ( dev-lang/erlang )
 	X? (
@@ -45,11 +45,11 @@ DEPEND="${RDEPEND}"
 BDEPEND="
 	dev-vcs/subversion
 	gtk3? ( virtual/pkgconfig )
-	python? ( virtual/pkgconfig )
+	python-module? ( virtual/pkgconfig )
 "
 
 pkg_setup() {
-	use python && python-single-r1_pkg_setup
+	use python-module && python-single-r1_pkg_setup
 }
 
 src_configure() {
@@ -73,7 +73,7 @@ src_configure() {
 		$(use_enable static-libs static)
 		$(use_with erlang)
 		$(use_with libapl)
-		$(use_with python)
+		$(use_with python-module)
 		$(use_with gtk3)
 		$(use_with pcre2 pcre)
 		$(use_with sqlite3)

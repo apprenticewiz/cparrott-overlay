@@ -17,20 +17,10 @@ LICENSE="Boost-1.0"
 SLOT="0"
 KEYWORDS="~amd64"
 
-# libphobos is built with dmd-bootstrap (it must not depend on dmd, or
-# Portage sees a cycle). Rebuilds of dmd use the installed compiler; a
-# first install pulls dmd-bootstrap.
-RDEPEND="
-	>=sys-devel/gcc-9
-	~dev-libs/libphobos-${PV}
-"
+RDEPEND=">=sys-devel/gcc-9"
 DEPEND="${RDEPEND}"
-BDEPEND="
-	|| (
-		dev-lang/dmd
-		dev-lang/dmd-bootstrap
-	)
-"
+PDEPEND="~dev-libs/libphobos-${PV}"
+BDEPEND="dev-lang/dmd-bootstrap"
 
 src_prepare() {
 	default
@@ -51,9 +41,12 @@ host_dmd() {
 src_compile() {
 	filter-lto
 
-	local host_dmd stage1
+	local host_dmd
 	host_dmd="$(host_dmd)"
 
+	# A single build, as in the Arch PKGBUILD. dmd links Druntime and Phobos
+	# statically, so this binary carries the host compiler's runtime and never
+	# loads libphobos2.so; a self-host stage would have nothing to relink.
 	mkdir -p generated || die
 	# Arch: $HOST_DMD -ofgenerated/build -g compiler/src/build.d -release -O
 	"${host_dmd}" -ofgenerated/build -g compiler/src/build.d -release -O || die
@@ -67,29 +60,9 @@ src_compile() {
 		-j"$(makeopts_jobs)" \
 		dmd || die
 
-	# Self-host: recompile with the stage1 binary. Point it at system
-	# libphobos (already installed) via a dmd.conf next to the executable.
-	stage1="${T}/stage1"
-	mkdir -p "${stage1}" || die
-	cp "$(find generated/linux/release -name dmd -type f -print -quit)" "${stage1}/dmd" || die
-	chmod +x "${stage1}/dmd" || die
-	local inc="${EPREFIX}/usr/include/dlang/dmd"
-	local lib="${EPREFIX}/usr/$(get_libdir)"
-	local dflags="-I${inc} -L-L${lib} -L--export-dynamic -fPIC"
-	printf '%s\n' '[Environment64]' "DFLAGS=${dflags}" > "${stage1}/dmd.conf" || die
-
-	"${stage1}/dmd" -ofgenerated/build -g compiler/src/build.d -release -O || die
-	generated/build \
-		--force \
-		BUILD=release \
-		HOST_DMD="${stage1}/dmd" \
-		CXX="$(tc-getCXX)" \
-		ENABLE_RELEASE=1 \
-		SYSCONFDIR="${EPREFIX}/etc" \
-		-j"$(makeopts_jobs)" \
-		dmd || die
-
-	emake -C compiler/docs DMD="${stage1}/dmd"
+	# Arch builds the man pages with HOST_DMD too: the generator imports
+	# object.d, and this release's runtime does not exist yet.
+	emake -C compiler/docs DMD="${host_dmd}"
 }
 
 src_install() {

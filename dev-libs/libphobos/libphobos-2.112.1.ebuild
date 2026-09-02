@@ -22,30 +22,23 @@ LICENSE="Boost-1.0"
 SLOT="0/112"
 KEYWORDS="~amd64"
 
-# libphobos must not BDEPEND on dmd: dmd DEPEND on this package, and a
-# || (bootstrap dmd) still looks like a cycle to Portage. Bootstrap is
-# versioned independently (2.112.1 is enough to compile current Phobos).
-BDEPEND=">=dev-lang/dmd-bootstrap-2.112.1"
+# Only the matching compiler can build this runtime: Druntime uses language
+# features the previous release does not implement. This is also what orders
+# the two packages; dmd keeps libphobos in PDEPEND so it is not a cycle.
+BDEPEND="~dev-lang/dmd-${PV}"
 RDEPEND="net-misc/curl"
 
 src_compile() {
 	filter-lto
 
 	local dmd_src="${WORKDIR}/dmd-${PV}"
-	local dmd
+	local dmd="${BROOT}/usr/bin/dmd"
 
-	# Prefer an installed dmd when rebuilding; otherwise the bootstrap
-	# compiler (always in BDEPEND). -conf= on these makefiles means neither
-	# reads a dmd.conf, so a half-installed libphobos in ROOT is ignored.
-	if has_version -b ">=dev-lang/dmd-2.112.1" && [[ -x ${BROOT}/usr/bin/dmd ]]; then
-		dmd="${BROOT}/usr/bin/dmd"
-	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
-		dmd="${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
-	else
-		die "Need >=dev-lang/dmd-2.112.1 or >=dev-lang/dmd-bootstrap-2.112.1"
-	fi
+	[[ -x ${dmd} ]] || die "dev-lang/dmd-${PV} is not installed"
 
-	# Arch: make -f posix.mak in druntime then phobos.
+	# Arch: make -f posix.mak in druntime then phobos. These makefiles pass
+	# -conf=, so no dmd.conf is read and the older libphobos still in ROOT
+	# is ignored.
 	emake -C "${dmd_src}/druntime" \
 		DMD="${dmd}" \
 		CC="$(tc-getCC)" \

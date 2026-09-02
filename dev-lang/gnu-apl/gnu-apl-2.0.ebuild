@@ -5,7 +5,7 @@ EAPI=8
 
 PYTHON_COMPAT=( python3_{11..14} )
 
-inherit python-single-r1
+inherit python-single-r1 toolchain-funcs
 
 DESCRIPTION="GNU interpreter for the APL programming language"
 HOMEPAGE="https://www.gnu.org/software/apl/"
@@ -15,7 +15,7 @@ S="${WORKDIR}/apl-${PV}"
 LICENSE="GPL-3+"
 SLOT="0"
 KEYWORDS="~amd64"
-IUSE="erlang fftw gsl gtk3 libapl +pcre2 +png postgresql python-module +sqlite3 static-libs X"
+IUSE="doc erlang fftw gsl gtk3 libapl +pcre2 +png postgresql python-module +sqlite3 static-libs X"
 
 REQUIRED_USE="
 	erlang? ( libapl )
@@ -44,12 +44,55 @@ RDEPEND="
 DEPEND="${RDEPEND}"
 BDEPEND="
 	dev-vcs/subversion
+	doc? (
+		|| (
+			app-office/libreoffice
+			app-office/libreoffice-bin
+		)
+	)
 	gtk3? ( virtual/pkgconfig )
 	python-module? ( virtual/pkgconfig )
 "
 
 pkg_setup() {
 	use python-module && python-single-r1_pkg_setup
+}
+
+src_prepare() {
+	default
+
+	# HOWTOs writes intermediate HTML through /tmp, which the sandbox blocks.
+	sed -i \
+		-e 's|> /tmp/$@ ;| > $@.tmp ;|' \
+		-e 's|mv -f /tmp/$@|mv -f $@.tmp|' \
+		-e '/APL-on-Macintosh\.pdf/d' \
+		-e '/Parallel-APL\.pdf/d' \
+		HOWTOs/Makefile.am HOWTOs/Makefile.in || die
+
+	if use doc; then
+		# Give LibreOffice a profile under HOME instead of writing into
+		# /usr/lib*/libreoffice/share/uno_packages.
+		sed -i \
+			-e 's|lowriter --headless --convert-to pdf $<|soffice --headless --norestore --nolockcheck -env:UserInstallation=file://$$HOME/lo-profile --convert-to pdf --outdir . $<|' \
+			HOWTOs/Makefile.am HOWTOs/Makefile.in || die
+	else
+		# The PDF is only a make all extra; it is not in dist_doc_DATA.
+		sed -i -e '/^all: LApack-primer\.pdf$/d' \
+			HOWTOs/Makefile.am HOWTOs/Makefile.in || die
+	fi
+}
+
+src_compile() {
+	if use doc; then
+		# LibreOffice still probes its system uno_packages dir; pretend that
+		# write succeeded so the sandbox does not fail the build.
+		addpredict /usr/$(get_libdir)/libreoffice
+		mkdir -p "${T}/lo-home" || die
+		local -x HOME="${T}/lo-home"
+		local -x SAL_USE_VCLPLUGIN=svp
+		local -x SAL_DISABLE_OPENCL=1
+	fi
+	default
 }
 
 src_configure() {
@@ -87,6 +130,10 @@ src_configure() {
 
 src_install() {
 	default
+
+	if use doc; then
+		dodoc HOWTOs/{APL-on-Macintosh,Parallel-APL,LApack-primer}.pdf
+	fi
 
 	find "${ED}" -name '*.la' -delete || die
 }

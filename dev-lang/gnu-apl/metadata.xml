@@ -2,6 +2,7 @@
 <!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
 <pkgmetadata>
 	<use>
+		<flag name="doc">Install extra HOWTO PDFs and generate LApack-primer.pdf with LibreOffice</flag>
 		<flag name="erlang">Build the Erlang interface (also builds libapl.so)</flag>
 		<flag name="fftw">Enable ⎕FFT using <pkg>sci-libs/fftw</pkg></flag>
 		<flag name="gsl">Enable ⎕MX and extra linear algebra using <pkg>sci-libs/gsl</pkg></flag>
@@ -10,7 +11,7 @@
 		<flag name="pcre2">Enable ⎕RE using <pkg>dev-libs/libpcre2</pkg></flag>
 		<flag name="png">Enable ⎕PNG using <pkg>media-libs/libpng</pkg></flag>
 		<flag name="postgresql">Enable PostgreSQL support in ⎕SQL</flag>
-		<flag name="python">Build the Python extension lib_gnu_apl.so</flag>
+		<flag name="python-module">Build the Python extension lib_gnu_apl.so</flag>
 		<flag name="sqlite3">Enable SQLite support in ⎕SQL</flag>
 	</use>
 	<upstream>

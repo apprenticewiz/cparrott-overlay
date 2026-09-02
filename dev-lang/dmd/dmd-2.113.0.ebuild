@@ -17,9 +17,10 @@ LICENSE="Boost-1.0"
 SLOT="0"
 KEYWORDS="~amd64"
 
-# libphobos is built with dmd-bootstrap, so it can be a real build+runtime
-# dep here without a cycle. Rebuilds of dmd use the installed compiler;
-# a first install pulls dmd-bootstrap.
+# libphobos is built with dmd-bootstrap (it must not depend on dmd, or
+# Portage sees a cycle). Rebuilds of dmd use the installed compiler; a
+# first install pulls dmd-bootstrap. There is no 2.113 bootstrap tarball;
+# 2.112.1 is enough as HOST_DMD.
 RDEPEND="
 	>=sys-devel/gcc-9
 	~dev-libs/libphobos-${PV}
@@ -28,7 +29,7 @@ DEPEND="${RDEPEND}"
 BDEPEND="
 	|| (
 		>=dev-lang/dmd-${PV}
-		~dev-lang/dmd-bootstrap-${PV}
+		>=dev-lang/dmd-bootstrap-2.112.1
 	)
 "
 
@@ -116,9 +117,5 @@ src_install() {
 
 pkg_postinst() {
 	elog "dmd reads ${EPREFIX}/etc/dmd.conf for its import and library paths."
-	elog "Those paths are provided by dev-libs/libphobos, which contains"
-	elog "Druntime and the Phobos standard library. Compiling D programs"
-	elog "needs it, so emerge it if it is not already installed:"
-	elog ""
-	elog "    emerge --ask dev-libs/libphobos"
+	elog "Druntime and Phobos come from the matching dev-libs/libphobos slot."
 }

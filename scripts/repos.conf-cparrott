@@ -9,5 +9,5 @@
 [cparrott]
 location = /var/db/repos/cparrott
 sync-type = git
-sync-uri = https://github.com/cparrott/cparrott-overlay.git
+sync-uri = https://github.com/apprenticewiz/cparrott-overlay.git
 auto-sync = yes

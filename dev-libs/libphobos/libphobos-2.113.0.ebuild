@@ -22,15 +22,10 @@ LICENSE="Boost-1.0"
 SLOT="0/112"
 KEYWORDS="~amd64"
 
-# dmd-bootstrap is listed first so a first install does not pull dev-lang/dmd,
-# which depends on this package. Rebuilds use an installed dmd of the same
-# version, so dmd-bootstrap can be depcleaned afterwards.
-BDEPEND="
-	|| (
-		~dev-lang/dmd-bootstrap-${PV}
-		~dev-lang/dmd-${PV}
-	)
-"
+# libphobos must not BDEPEND on dmd: dmd DEPEND on this package, and a
+# || (bootstrap dmd) still looks like a cycle to Portage. Bootstrap is
+# versioned independently (2.112.1 is enough to compile current Phobos).
+BDEPEND=">=dev-lang/dmd-bootstrap-2.112.1"
 RDEPEND="net-misc/curl"
 
 src_compile() {
@@ -39,15 +34,15 @@ src_compile() {
 	local dmd_src="${WORKDIR}/dmd-${PV}"
 	local dmd
 
-	# Prefer an installed dmd of the same version; fall back to the bootstrap.
-	# Both are invoked with -conf= by these makefiles, so neither reads a
-	# dmd.conf and the half-installed libphobos in ROOT is never picked up.
-	if has_version -b "~dev-lang/dmd-${PV}"; then
+	# Prefer an installed dmd when rebuilding; otherwise the bootstrap
+	# compiler (always in BDEPEND). -conf= on these makefiles means neither
+	# reads a dmd.conf, so a half-installed libphobos in ROOT is ignored.
+	if has_version -b ">=dev-lang/dmd-2.112.1" && [[ -x ${BROOT}/usr/bin/dmd ]]; then
 		dmd="${BROOT}/usr/bin/dmd"
 	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
 		dmd="${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
 	else
-		die "Need ~dev-lang/dmd-${PV} or ~dev-lang/dmd-bootstrap-${PV}"
+		die "Need >=dev-lang/dmd-2.112.1 or >=dev-lang/dmd-bootstrap-2.112.1"
 	fi
 
 	# Arch: make -f posix.mak in druntime then phobos.

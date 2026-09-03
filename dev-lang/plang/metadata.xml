@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<longdescription lang="en">
+		plang is an LLVM-based Pascal compiler. It implements ISO 7185
+		Standard Pascal (level 1) and ISO 10206 Extended Pascal; Turbo
+		Pascal support is under development. The driver uses llc and
+		ld.lld from the selected LLVM slot, and GCC's crt/libgcc at
+		link time. Tests are a driver smoke compile, not the upstream
+		GoogleTest/lit suite.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/apprenticewiz/plang/issues</bugs-to>
+		<remote-id type="github">apprenticewiz/plang</remote-id>
+	</upstream>
+</pkgmetadata>

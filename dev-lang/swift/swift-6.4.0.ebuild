@@ -65,6 +65,7 @@ PATCHES=(
 	"${FILESDIR}/${PF}/link-with-lld.patch"
 	"${FILESDIR}/${PF}/remove-linux-scc_h.patch"
 	"${FILESDIR}/${PF}/respect-c-cxx-flags.patch"
+	"${FILESDIR}/${PF}/swift-build-detect-gentoo-ld.patch"
 )
 
 S="${WORKDIR}"

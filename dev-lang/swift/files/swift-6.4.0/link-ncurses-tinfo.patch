@@ -18,18 +18,26 @@
 +	xcrun clang++ -g -std=c++11 -stdlib=libc++ -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -I${OBJROOT}/include -I${SRCROOT}/include -I${SRCROOT}/tools/swift/include -L${OBJROOT}/lib -lLLVMSupport -lncurses -ltinfo test.cpp ${SOURCES} -o test
 --- a/swift/utils/test-prefix-map/Makefile
 +++ b/swift/utils/test-prefix-map/Makefile
-@@ -13,3 +13,3 @@
+@@ -11,7 +11,7 @@ CXXFLAGS = -std=c++11 \
+ 	   -I$(objroot)/tools/clang/include \
+ 	   -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
  
 -LDFLAGS = -L$(objroot)/lib -lswiftBasic -lLLVMSupport -lcurses
 +LDFLAGS = -L$(objroot)/lib -lswiftBasic -lLLVMSupport -lncurses -ltinfo
  
+ main: main.cpp $(srcroot)/tools/swift/include/swift/Basic/PrefixMap.h
+ 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o main main.cpp
 --- a/swift/utils/test-successor-map/Makefile
 +++ b/swift/utils/test-successor-map/Makefile
-@@ -13,3 +13,3 @@
+@@ -11,7 +11,7 @@ CXXFLAGS = -std=c++11 \
+ 	   -I$(objroot)/tools/clang/include \
+ 	   -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
  
 -LDFLAGS = -L$(objroot)/Debug+Asserts/lib -lLLVMSupport -lcurses
 +LDFLAGS = -L$(objroot)/Debug+Asserts/lib -lLLVMSupport -lncurses -ltinfo
  
+ main: main.cpp $(srcroot)/tools/swift/include/swift/Basic/SuccessorMap.h
+ 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o main main.cpp
 --- a/llbuild/Package.swift
 +++ b/llbuild/Package.swift
 @@ -31,7 +31,10 @@ let terminfoLibraries: [LinkerSetting] = {
@@ -70,18 +78,18 @@
 --- a/llbuild/products/libllbuild/CMakeLists.txt
 +++ b/llbuild/products/libllbuild/CMakeLists.txt
 @@ -23,7 +23,7 @@ target_link_libraries(llbuild PRIVATE
-
+ 
  if(NOT CMAKE_SYSTEM_NAME STREQUAL Windows)
    target_link_libraries(llbuild PRIVATE
 -    curses)
 +    ncurses tinfo)
  endif()
-
+ 
  target_include_directories(llbuild
 --- a/llbuild/products/llbuild/CMakeLists.txt
 +++ b/llbuild/products/llbuild/CMakeLists.txt
 @@ -15,5 +15,5 @@ set_target_properties(llbuild-tool PROPERTIES
-
+ 
  if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
    target_link_libraries(llbuild-tool PRIVATE
 -    curses)

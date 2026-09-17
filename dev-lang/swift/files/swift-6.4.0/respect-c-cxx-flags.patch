@@ -3,67 +3,9 @@
 # Swift build system blows away `CMAKE_C{XX}_FLAGS` without picking up the
 # environment. These need to be picked up again to not be ignored.
 
---- a/swift/utils/build-script-impl
-+++ b/swift/utils/build-script-impl
-@@ -1819,10 +1819,10 @@ for host in "${ALL_HOSTS[@]}"; do
- 
-                 cmake_options=(
-                     "${cmake_options[@]}"
--                    -DCMAKE_C_FLAGS="$(swift_c_flags ${host})"
--                    -DCMAKE_CXX_FLAGS="$(swift_c_flags ${host})"
--                    -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG"
--                    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG"
-+                    -DCMAKE_C_FLAGS="${CFLAGS} $(swift_c_flags ${host})"
-+                    -DCMAKE_CXX_FLAGS="${CXXFLAGS} $(swift_c_flags ${host})"
-+                    -DCMAKE_C_FLAGS_RELWITHDEBINFO="${CFLAGS} -O2 -DNDEBUG"
-+                    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="${CXXFLAGS} -O2 -DNDEBUG"
-                     -DCMAKE_BUILD_TYPE:STRING="${SWIFT_BUILD_TYPE}"
-                     -DLLVM_ENABLE_ASSERTIONS:BOOL=$(true_false "${SWIFT_ENABLE_ASSERTIONS}")
-                     -DSWIFT_ANALYZE_CODE_COVERAGE:STRING=$(toupper "${SWIFT_ANALYZE_CODE_COVERAGE}")
-@@ -2229,8 +2229,8 @@ for host in "${ALL_HOSTS[@]}"; do
-                 cmake_options=(
-                     "${cmake_options[@]}"
-                     -C${LLDB_SOURCE_DIR}/cmake/caches/${cmake_cache}
--                    -DCMAKE_C_FLAGS="$(llvm_c_flags ${host})"
--                    -DCMAKE_CXX_FLAGS="$(llvm_c_flags ${host})"
-+                    -DCMAKE_C_FLAGS="${CFLAGS} $(llvm_c_flags ${host})"
-+                    -DCMAKE_CXX_FLAGS="${CXXFLAGS} $(llvm_c_flags ${host})"
-                     -DCMAKE_BUILD_TYPE:STRING="${LLDB_BUILD_TYPE}"
-                     -DLLDB_SWIFTC:PATH=${SWIFTC_BIN}
-                     -DLLDB_SWIFT_LIBS:PATH="$(build_directory ${LOCAL_HOST} swift)/lib/swift"
---- a/swift/utils/swift_build_support/swift_build_support/products/llvm.py
-+++ b/swift/utils/swift_build_support/swift_build_support/products/llvm.py
-@@ -284,10 +284,10 @@ class LLVM(cmake_product.CMakeProduct):
-         # llvm/tools, e.g. to build LLDB.
- 
-         llvm_c_flags = ' '.join(self.llvm_c_flags(platform, arch))
--        llvm_cmake_options.define('CMAKE_C_FLAGS', llvm_c_flags)
--        llvm_cmake_options.define('CMAKE_CXX_FLAGS', llvm_c_flags)
--        llvm_cmake_options.define('CMAKE_C_FLAGS_RELWITHDEBINFO', '-O2 -DNDEBUG')
--        llvm_cmake_options.define('CMAKE_CXX_FLAGS_RELWITHDEBINFO', '-O2 -DNDEBUG')
-+        llvm_cmake_options.define('CMAKE_C_FLAGS', ' '.join([os.environ.get('CFLAGS', ''), llvm_c_flags]))
-+        llvm_cmake_options.define('CMAKE_CXX_FLAGS', ' '.join([os.environ.get('CXXFLAGS', ''), llvm_c_flags]))
-+        llvm_cmake_options.define('CMAKE_C_FLAGS_RELWITHDEBINFO', ' '.join([os.environ.get('CFLAGS', ''), '-O2 -DNDEBUG']))
-+        llvm_cmake_options.define('CMAKE_CXX_FLAGS_RELWITHDEBINFO', ' '.join([os.environ.get('CXXFLAGS', ''), '-O2 -DNDEBUG']))
-         llvm_cmake_options.define('CMAKE_BUILD_TYPE:STRING',
-                                   self.args.llvm_build_variant)
-         llvm_cmake_options.define('LLVM_TOOL_SWIFT_BUILD:BOOL', 'FALSE')
---- a/swift/utils/swift_build_support/swift_build_support/products/product.py
-+++ b/swift/utils/swift_build_support/swift_build_support/products/product.py
-@@ -450,8 +450,8 @@ class Product(object):
- 
-         (platform, arch) = host_target.split('-')
-         common_c_flags = ' '.join(self.common_cross_c_flags(platform, arch))
--        self.cmake_options.define('CMAKE_C_FLAGS', common_c_flags)
--        self.cmake_options.define('CMAKE_CXX_FLAGS', common_c_flags)
-+        self.cmake_options.define('CMAKE_C_FLAGS', ' '.join([os.environ.get('CFLAGS', ''), common_c_flags]))
-+        self.cmake_options.define('CMAKE_CXX_FLAGS', ' '.join([os.environ.get('CXXFLAGS', ''), common_c_flags]))
- 
-         toolchain_file = None
-         if self.is_darwin_host(host_target):
 --- a/swift/SwiftCompilerSources/CMakeLists.txt
 +++ b/swift/SwiftCompilerSources/CMakeLists.txt
-@@ -222,6 +222,11 @@ function(add_swift_compiler_modules_library name)
+@@ -228,6 +228,11 @@ function(add_swift_compiler_modules_library name)
      list(APPEND sdk_option "-I" "${swift_exec_bin_dir}/../lib" "-I" "${sdk_path}/usr/lib")
    endif()
  
@@ -91,7 +33,7 @@
  function(_set_pure_swift_link_flags name relpath_to_lib_dir)
 --- a/swift/stdlib/cmake/modules/SwiftSource.cmake
 +++ b/swift/stdlib/cmake/modules/SwiftSource.cmake
-@@ -138,6 +138,12 @@ function(handle_swift_sources
+@@ -142,6 +142,12 @@ function(handle_swift_sources
        endif()
      endif()
      list(APPEND swift_compile_flags "-color-diagnostics")
@@ -104,16 +46,75 @@
      _compile_swift_files(
          dependency_target
          module_dependency_target
+--- a/swift/utils/build-script-impl
++++ b/swift/utils/build-script-impl
+@@ -1744,10 +1744,10 @@ for host in "${ALL_HOSTS[@]}"; do
+ 
+                 cmake_options=(
+                     "${cmake_options[@]}"
+-                    -DCMAKE_C_FLAGS="$(swift_c_flags ${host})"
+-                    -DCMAKE_CXX_FLAGS="$(swift_c_flags ${host})"
+-                    -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG"
+-                    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG"
++                    -DCMAKE_C_FLAGS="${CFLAGS} $(swift_c_flags ${host})"
++                    -DCMAKE_CXX_FLAGS="${CXXFLAGS} $(swift_c_flags ${host})"
++                    -DCMAKE_C_FLAGS_RELWITHDEBINFO="${CFLAGS} -O2 -DNDEBUG"
++                    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="${CXXFLAGS} -O2 -DNDEBUG"
+                     -DCMAKE_BUILD_TYPE:STRING="${SWIFT_BUILD_TYPE}"
+                     -DLLVM_ENABLE_ASSERTIONS:BOOL=$(true_false "${SWIFT_ENABLE_ASSERTIONS}")
+                     -DSWIFT_ANALYZE_CODE_COVERAGE:STRING=$(toupper "${SWIFT_ANALYZE_CODE_COVERAGE}")
+@@ -2174,8 +2174,8 @@ for host in "${ALL_HOSTS[@]}"; do
+                 cmake_options=(
+                     "${cmake_options[@]}"
+                     -C${LLDB_SOURCE_DIR}/cmake/caches/${cmake_cache}
+-                    -DCMAKE_C_FLAGS="$(llvm_c_flags ${host})"
+-                    -DCMAKE_CXX_FLAGS="$(llvm_c_flags ${host})"
++                    -DCMAKE_C_FLAGS="${CFLAGS} $(llvm_c_flags ${host})"
++                    -DCMAKE_CXX_FLAGS="${CXXFLAGS} $(llvm_c_flags ${host})"
+                     -DCMAKE_BUILD_TYPE:STRING="${LLDB_BUILD_TYPE}"
+                     -DLLDB_SWIFTC:PATH=${SWIFTC_BIN}
+                     -DLLDB_SWIFT_LIBS:PATH="$(build_directory ${LOCAL_HOST} swift)/lib/swift"
+--- a/swift/utils/swift_build_support/swift_build_support/products/llvm.py
++++ b/swift/utils/swift_build_support/swift_build_support/products/llvm.py
+@@ -296,10 +296,10 @@ class LLVM(cmake_product.CMakeProduct):
+         # llvm/tools, e.g. to build LLDB.
+ 
+         llvm_c_flags = ' '.join(self.llvm_c_flags(platform, arch))
+-        llvm_cmake_options.define('CMAKE_C_FLAGS', llvm_c_flags)
+-        llvm_cmake_options.define('CMAKE_CXX_FLAGS', llvm_c_flags)
+-        llvm_cmake_options.define('CMAKE_C_FLAGS_RELWITHDEBINFO', '-O2 -DNDEBUG')
+-        llvm_cmake_options.define('CMAKE_CXX_FLAGS_RELWITHDEBINFO', '-O2 -DNDEBUG')
++        llvm_cmake_options.define('CMAKE_C_FLAGS', ' '.join([os.environ.get('CFLAGS', ''), llvm_c_flags]))
++        llvm_cmake_options.define('CMAKE_CXX_FLAGS', ' '.join([os.environ.get('CXXFLAGS', ''), llvm_c_flags]))
++        llvm_cmake_options.define('CMAKE_C_FLAGS_RELWITHDEBINFO', ' '.join([os.environ.get('CFLAGS', ''), '-O2 -DNDEBUG']))
++        llvm_cmake_options.define('CMAKE_CXX_FLAGS_RELWITHDEBINFO', ' '.join([os.environ.get('CXXFLAGS', ''), '-O2 -DNDEBUG']))
+         llvm_cmake_options.define('CMAKE_BUILD_TYPE:STRING',
+                                   self.args.llvm_build_variant)
+         llvm_cmake_options.define('LLVM_TOOL_SWIFT_BUILD:BOOL', 'FALSE')
+--- a/swift/utils/swift_build_support/swift_build_support/products/product.py
++++ b/swift/utils/swift_build_support/swift_build_support/products/product.py
+@@ -472,8 +472,8 @@ class Product(object):
+ 
+         (platform, arch) = host_target.split('-')
+         common_c_flags = ' '.join(self.common_cross_c_flags(platform, arch))
+-        self.cmake_options.define('CMAKE_C_FLAGS', common_c_flags)
+-        self.cmake_options.define('CMAKE_CXX_FLAGS', common_c_flags)
++        self.cmake_options.define('CMAKE_C_FLAGS', ' '.join([os.environ.get('CFLAGS', ''), common_c_flags]))
++        self.cmake_options.define('CMAKE_CXX_FLAGS', ' '.join([os.environ.get('CXXFLAGS', ''), common_c_flags]))
+ 
+         toolchain_file = None
+         if self.is_darwin_host(host_target):
 --- a/swift-driver/Utilities/build-script-helper.py
 +++ b/swift-driver/Utilities/build-script-helper.py
-@@ -17,5 +17,6 @@ import argparse
- import errno
+@@ -18,6 +18,7 @@ import errno
  import json
  import os
  import platform
 +import shlex
  import shutil
-@@ -193,5 +194,9 @@ def get_swiftpm_options(args):
+ import subprocess
+ import sys
+@@ -194,6 +195,10 @@ def get_swiftpm_options(args):
      if args.action == "install":
          swiftpm_args += ["-Xswiftc", "-no-toolchain-stdlib-rpath"]
  
@@ -123,7 +124,9 @@
 +
      return swiftpm_args
  
-@@ -760,8 +765,6 @@ def build_llbuild_using_cmake(
+ 
+@@ -758,9 +763,7 @@ def build_llbuild_using_cmake(
+         ["touch", os.path.join(llbuild_api_dir, "codemodel-v2")]
      )
      flags = [
 -        "-DCMAKE_C_COMPILER:=clang",
@@ -133,10 +136,7 @@
          "-DLLBUILD_SUPPORT_BINDINGS:=Swift",
      ]
      llbuild_cmake_flags = base_cmake_flags + flags
-@@ -878,9 +881,12 @@ def cmake_build(
-     cmd = [
-         args.cmake_bin,
-         "-G",
+@@ -881,6 +884,9 @@ def cmake_build(
          "Ninja",
          "-DCMAKE_MAKE_PROGRAM=%s" % args.ninja_bin,
          "-DCMAKE_BUILD_TYPE:=Release",
@@ -148,7 +148,7 @@
      ]
 --- a/swiftpm/Sources/Build/BuildDescription/ClangModuleBuildDescription.swift
 +++ b/swiftpm/Sources/Build/BuildDescription/ClangModuleBuildDescription.swift
-@@ -365,6 +365,9 @@ public final class ClangModuleBuildDescription {
+@@ -366,6 +366,9 @@ public final class ClangModuleBuildDescription {
              args += self.buildParameters.toolchain.extraFlags.cxxCompilerFlags.rawFlags
              // User arguments (from -Xcxx) should follow generated arguments to allow user overrides
              args += self.buildParameters.flags.cxxCompilerFlags.rawFlags
@@ -168,7 +168,7 @@
  import shutil
  import subprocess
  import sys
-@@ -554,6 +555,7 @@ def build_with_cmake(args, cmake_args, ninja_args, source_path, build_dir, cmake
+@@ -572,6 +573,7 @@ def build_with_cmake(args, cmake_args, ninja_args, source_path, build_dir, cmake
  
          cmd = [
              "env"] + cmake_env + ["MACOSX_DEPLOYMENT_TARGET=%s" % (g_macos_deployment_target),
@@ -176,7 +176,7 @@
              args.cmake_path, "-G", "Ninja",
              "-DCMAKE_MAKE_PROGRAM=%s" % args.ninja_path,
              "-DCMAKE_BUILD_TYPE:=Debug",
-@@ -881,6 +883,10 @@ def get_swiftpm_flags(args):
+@@ -958,6 +960,10 @@ def get_swiftpm_flags(args):
      # Enforce explicit target dependencies
      # build_flags.extend(["--explicit-target-dependency-import-check", "error"])
  

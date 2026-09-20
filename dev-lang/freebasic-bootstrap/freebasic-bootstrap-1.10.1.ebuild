@@ -13,7 +13,7 @@ S="${WORKDIR}/FreeBASIC-${PV}-source-bootstrap"
 LICENSE="GPL-2+ LGPL-2.1+"
 SLOT="0"
 # Pre-translated C lives under bootstrap/linux-$(arch); this is not a generic source build.
-KEYWORDS="-* ~amd64"
+KEYWORDS="-* ~amd64 ~arm64"
 
 RDEPEND="sys-libs/ncurses:="
 DEPEND="${RDEPEND}"

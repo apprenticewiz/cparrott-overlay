@@ -73,6 +73,15 @@ src_install() {
 	dodir "${dest}"
 	cp -a "${S}${dest}/." "${ED}${dest}/" || die
 
+	# The .NET bridge targets net8.0 and pins Microsoft.NETCore.App 8.0.0.
+	# Roll-forward defaults to staying within a major version, so with only a
+	# newer runtime installed the interpreter prints "You must install or
+	# update .NET" and fails with "Init failed: 0x80008096" at startup. Gentoo
+	# tracks a single DOTNET_ROOT, so requesting the exact 8.0 runtime is not
+	# generally possible; allow the bridge to use whatever major is present.
+	sed -i -e '/"runtimeOptions": {/a\    "rollForward": "LatestMajor",' \
+		"${ED}${dest}/Dyalog.Net.Bridge.runtimeconfig.json" || die
+
 	dosym -r "${dest}/mapl" /usr/bin/dyalog
 	dosym -r "${dest}/scriptbin/dyalogscript" /usr/bin/dyalogscript
 

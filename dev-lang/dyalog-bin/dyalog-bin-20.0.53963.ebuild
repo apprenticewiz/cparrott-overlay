@@ -9,8 +9,14 @@ DESCRIPTION="Dyalog APL interpreter"
 HOMEPAGE="https://www.dyalog.com/download-zone.htm"
 DYALOG_DOWNLOAD="https://www.dyalog.com/uploads/php/download.dyalog.com"
 SRC_URI="
-	${DYALOG_DOWNLOAD}/download.php?file=$(ver_cut 1-2)/linux_64_${PV}_unicode.x86_64.deb
-		-> ${P}-amd64.deb
+	amd64? (
+		${DYALOG_DOWNLOAD}/download.php?file=$(ver_cut 1-2)/linux_64_${PV}_unicode.x86_64.deb
+			-> ${P}-amd64.deb
+	)
+	arm64? (
+		${DYALOG_DOWNLOAD}/download.php?file=$(ver_cut 1-2)/linux_64_${PV}_unicode.aarch64.deb
+			-> ${P}-arm64.deb
+	)
 	https://www.dyalog.com/uploads/documents/Developer_Software_Licence.pdf
 		-> dyalog-Developer_Software_Licence.pdf
 "
@@ -18,7 +24,7 @@ S="${WORKDIR}"
 
 LICENSE="all-rights-reserved"
 SLOT="0"
-KEYWORDS="-* ~amd64"
+KEYWORDS="-* ~amd64 ~arm64"
 IUSE="dotnet odbc"
 RESTRICT="bindist mirror strip"
 REQUIRED_USE="elibc_glibc"
@@ -56,7 +62,7 @@ RDEPEND="
 QA_PREBUILT="*"
 
 src_unpack() {
-	unpack_deb "${P}-amd64.deb"
+	unpack_deb "${P}-${ARCH}.deb"
 }
 
 src_install() {
@@ -71,7 +77,7 @@ src_install() {
 	dosym -r "${dest}/scriptbin/dyalogscript" /usr/bin/dyalogscript
 
 	newdoc "${DISTDIR}/dyalog-Developer_Software_Licence.pdf" LICENSE.pdf
-	dodoc usr/share/doc/dyalog-unicode-190/changelog.gz
+	dodoc usr/share/doc/dyalog-unicode-$(ver_rs 1 '' "$(ver_cut 1-2)")/changelog.gz
 
 	doicon "${ED}${dest}/dyalog.svg"
 	domenu "${ED}${dest}/dyalog.desktop"

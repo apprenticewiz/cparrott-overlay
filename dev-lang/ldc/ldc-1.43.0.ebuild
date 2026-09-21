@@ -3,25 +3,30 @@
 
 EAPI=8
 
-# LDC 1.42 supports LLVM 15–21. llvm-r2 defaults to the newest slot in
-# this range (21); llvm_slot_15 through llvm_slot_20 remain available.
+# This LDC release supports LLVM 15–21. llvm-r2 defaults to the newest
+# slot in this range; llvm_slot_15 through llvm_slot_20 remain available.
 LLVM_COMPAT=( {15..21} )
 
 inherit cmake flag-o-matic llvm-r2
 
 DESCRIPTION="LLVM-based D compiler (LDC) with Druntime and Phobos"
 HOMEPAGE="https://github.com/ldc-developers/ldc"
-SRC_URI="https://github.com/ldc-developers/ldc/releases/download/v${PV}/ldc-${PV}-src.tar.gz"
+SRC_URI="
+	https://github.com/ldc-developers/ldc/releases/download/v${PV}/ldc-${PV}-src.tar.gz
+	amd64? (
+		https://github.com/ldc-developers/ldc/releases/download/v${PV}/ldc2-${PV}-linux-x86_64.tar.xz
+	)
+	arm64? (
+		https://github.com/ldc-developers/ldc/releases/download/v${PV}/ldc2-${PV}-linux-aarch64.tar.xz
+	)
+"
 S="${WORKDIR}/ldc-${PV}-src"
 
 LICENSE="BSD Boost-1.0 Apache-2.0-with-LLVM-exceptions"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 RESTRICT="test"
 
-# dmd-bootstrap is listed before dmd so a first install does not pull
-# the full compiler. An installed dmd or ldc still satisfies the ||.
-#
 # Compiler and liblphobos stay in one package because cmake produces both
 # in a single build (the runtime is compiled by that new ldc2). Splitting
 # like Arch would either rebuild the tree or recreate the dmd/libphobos
@@ -37,11 +42,6 @@ RDEPEND="
 DEPEND="${RDEPEND}"
 BDEPEND="
 	>=dev-build/cmake-3.16
-	|| (
-		>=dev-lang/ldc-1.40
-		>=dev-lang/dmd-bootstrap-2.112.1
-		>=dev-lang/dmd-2.111
-	)
 	$(llvm_gen_dep '
 		llvm-core/llvm:${LLVM_SLOT}=
 		llvm-core/lld:${LLVM_SLOT}=
@@ -53,15 +53,17 @@ pkg_setup() {
 }
 
 host_d() {
-	if has_version -b ">=dev-lang/ldc-1.40" && [[ -x ${BROOT}/usr/bin/ldmd2 ]]; then
-		echo "${BROOT}/usr/bin/ldmd2"
-	elif has_version -b ">=dev-lang/dmd-2.111" && [[ -x ${BROOT}/usr/bin/dmd ]]; then
-		echo "${BROOT}/usr/bin/dmd"
-	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
-		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
-	else
-		die "Need ldc, dmd, or dmd-bootstrap as the host D compiler"
-	fi
+	local bootstrap_arch
+
+	case ${ARCH} in
+		amd64) bootstrap_arch=x86_64 ;;
+		arm64) bootstrap_arch=aarch64 ;;
+		*) die "unsupported architecture ${ARCH}" ;;
+	esac
+
+	local compiler="${WORKDIR}/ldc2-${PV}-linux-${bootstrap_arch}/bin/ldmd2"
+	[[ -x ${compiler} ]] || die "bootstrap compiler not found: ${compiler}"
+	echo "${compiler}"
 }
 
 src_prepare() {
@@ -89,13 +91,9 @@ src_configure() {
 		-DBASH_COMPLETION_COMPLETIONSDIR="${EPREFIX}/usr/share/bash-completion/completions"
 	)
 
-	# Arch D_COMPILER_FLAGS are ldc-only (-link-defaultlib-shared, --flto).
-	# dmd rejects those, so only pass them when self-hosting with ldmd2.
-	if [[ ${host} == *ldmd2 ]]; then
-		mycmakeargs+=(
-			-DD_COMPILER_FLAGS="-link-defaultlib-shared=false -linker=lld"
-		)
-	fi
+	mycmakeargs+=(
+		-DD_COMPILER_FLAGS="-link-defaultlib-shared=false -linker=lld"
+	)
 
 	cmake_src_configure
 }

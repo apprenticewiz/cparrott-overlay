@@ -21,7 +21,6 @@ die() {
 
 case "$(uname -m)" in
 	x86_64) ARCH=amd64 ;;
-	aarch64) ARCH=arm64 ;;
 	*) die "unsupported architecture $(uname -m)" ;;
 esac
 
@@ -70,20 +69,7 @@ echo ">>> Building dmd with ${GDC}"
 cd "${dmd_src}"
 mkdir -p generated
 "${hostd}/gdmd" -ofgenerated/build -g compiler/src/build.d -release -O
-
-# build.d sets MODEL_FLAG=-m64 whenever MODEL is 64, which it is on aarch64
-# too; gdmd forwards that to gdc, which only accepts -m64 on x86. build.d
-# drops MODEL_FLAG when it sees -march/-mtriple in DFLAGS, but only reads
-# DFLAGS from the process environment: a DFLAGS=... argument goes into its
-# separate flags map instead. Keep the variable scoped to this one command,
-# since the druntime and phobos makefiles below would otherwise forward
-# -march to dmd, which has no such switch.
-build_env=()
-if [[ ${ARCH} == arm64 ]]; then
-	build_env=( env DFLAGS=-march=armv8-a )
-fi
-
-"${build_env[@]}" generated/build \
+generated/build \
 	BUILD=release \
 	HOST_DMD="${hostd}/gdmd" \
 	CXX="${CXX:-c++}" \
@@ -96,20 +82,10 @@ dmd_bin="$(find generated -name dmd -type f -print -quit)"
 dmd_bin="${dmd_src}/${dmd_bin#./}"
 
 echo ">>> Building druntime and phobos with the new dmd"
-# osmodel.mak sets MODEL_FLAG:=-m$(MODEL) with no aarch64 case, so both
-# makefiles hand -m64 to cc, to dmd, and through dmd's importC to cpp. No
-# makefile marks MODEL_FLAG as override, so clearing it on the command line
-# wins everywhere. MODEL stays 64, keeping the generated/linux/release/64
-# paths that the tarball step collects from.
-make_args=( BUILD=release ENABLE_RELEASE=1 PIC=1 OS=linux )
-if [[ ${ARCH} == arm64 ]]; then
-	make_args+=( MODEL_FLAG= )
-fi
-
 make -C "${dmd_src}/druntime" -j"${JOBS}" \
-	DMD="${dmd_bin}" "${make_args[@]}"
+	DMD="${dmd_bin}" BUILD=release ENABLE_RELEASE=1 PIC=1 OS=linux
 make -C "${phobos_src}" -j"${JOBS}" \
-	DMD="${dmd_bin}" DMD_DIR="${dmd_src}" "${make_args[@]}"
+	DMD="${dmd_bin}" DMD_DIR="${dmd_src}" BUILD=release ENABLE_RELEASE=1 PIC=1 OS=linux
 
 echo ">>> Assembling tarball"
 pkg="${work}/dmd-bootstrap-${PV}"

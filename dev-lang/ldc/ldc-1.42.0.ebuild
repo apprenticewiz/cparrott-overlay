@@ -50,6 +50,14 @@ BDEPEND="
 
 pkg_setup() {
 	llvm-r2_pkg_setup
+
+	# The upstream prebuilt ldc2/ldmd2 link mimalloc. Its first allocation
+	# runs mi_process_init(), which calls open()/access() while libsandbox is
+	# still inside the dlopen() of its own open() wrapper. That wrapper's
+	# mutex is not recursive, so the bootstrap compiler deadlocks on startup
+	# and never prints anything. Handing mimalloc the NUMA node count skips
+	# the /sys probe that trips this.
+	export MIMALLOC_USE_NUMA_NODES=1
 }
 
 host_d() {

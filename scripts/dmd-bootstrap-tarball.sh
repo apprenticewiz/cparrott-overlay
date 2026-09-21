@@ -96,10 +96,20 @@ dmd_bin="$(find generated -name dmd -type f -print -quit)"
 dmd_bin="${dmd_src}/${dmd_bin#./}"
 
 echo ">>> Building druntime and phobos with the new dmd"
+# osmodel.mak sets MODEL_FLAG:=-m$(MODEL) with no aarch64 case, so both
+# makefiles hand -m64 to cc, to dmd, and through dmd's importC to cpp. No
+# makefile marks MODEL_FLAG as override, so clearing it on the command line
+# wins everywhere. MODEL stays 64, keeping the generated/linux/release/64
+# paths that the tarball step collects from.
+make_args=( BUILD=release ENABLE_RELEASE=1 PIC=1 OS=linux )
+if [[ ${ARCH} == arm64 ]]; then
+	make_args+=( MODEL_FLAG= )
+fi
+
 make -C "${dmd_src}/druntime" -j"${JOBS}" \
-	DMD="${dmd_bin}" BUILD=release ENABLE_RELEASE=1 PIC=1 OS=linux
+	DMD="${dmd_bin}" "${make_args[@]}"
 make -C "${phobos_src}" -j"${JOBS}" \
-	DMD="${dmd_bin}" DMD_DIR="${dmd_src}" BUILD=release ENABLE_RELEASE=1 PIC=1 OS=linux
+	DMD="${dmd_bin}" DMD_DIR="${dmd_src}" "${make_args[@]}"
 
 echo ">>> Assembling tarball"
 pkg="${work}/dmd-bootstrap-${PV}"

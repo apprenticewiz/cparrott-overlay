@@ -70,12 +70,22 @@ echo ">>> Building dmd with ${GDC}"
 cd "${dmd_src}"
 mkdir -p generated
 "${hostd}/gdmd" -ofgenerated/build -g compiler/src/build.d -release -O
+
+# build.d sets MODEL_FLAG=-m64 on every 64-bit host. gdmd forwards that to
+# gdc, and aarch64 GCC rejects -m64. Passing -march makes build.d omit
+# MODEL_FLAG (compiler/src/build.d) so both the D and C++ steps stay valid.
+build_dflags=()
+if [[ ${ARCH} == arm64 ]]; then
+	build_dflags+=( DFLAGS=-march=armv8-a )
+fi
+
 generated/build \
 	BUILD=release \
 	HOST_DMD="${hostd}/gdmd" \
 	CXX="${CXX:-c++}" \
 	ENABLE_RELEASE=1 \
 	-j"${JOBS}" \
+	"${build_dflags[@]}" \
 	dmd
 
 dmd_bin="$(find generated -name dmd -type f -print -quit)"

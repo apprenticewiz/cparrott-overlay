@@ -71,21 +71,24 @@ cd "${dmd_src}"
 mkdir -p generated
 "${hostd}/gdmd" -ofgenerated/build -g compiler/src/build.d -release -O
 
-# build.d sets MODEL_FLAG=-m64 on every 64-bit host. gdmd forwards that to
-# gdc, and aarch64 GCC rejects -m64. Passing -march makes build.d omit
-# MODEL_FLAG (compiler/src/build.d) so both the D and C++ steps stay valid.
-build_dflags=()
+# build.d sets MODEL_FLAG=-m64 whenever MODEL is 64, which it is on aarch64
+# too; gdmd forwards that to gdc, which only accepts -m64 on x86. build.d
+# drops MODEL_FLAG when it sees -march/-mtriple in DFLAGS, but only reads
+# DFLAGS from the process environment: a DFLAGS=... argument goes into its
+# separate flags map instead. Keep the variable scoped to this one command,
+# since the druntime and phobos makefiles below would otherwise forward
+# -march to dmd, which has no such switch.
+build_env=()
 if [[ ${ARCH} == arm64 ]]; then
-	build_dflags+=( DFLAGS=-march=armv8-a )
+	build_env=( env DFLAGS=-march=armv8-a )
 fi
 
-generated/build \
+"${build_env[@]}" generated/build \
 	BUILD=release \
 	HOST_DMD="${hostd}/gdmd" \
 	CXX="${CXX:-c++}" \
 	ENABLE_RELEASE=1 \
 	-j"${JOBS}" \
-	"${build_dflags[@]}" \
 	dmd
 
 dmd_bin="$(find generated -name dmd -type f -print -quit)"

@@ -15,7 +15,7 @@ SRC_URI="https://github.com/chapel-lang/chapel/releases/download/${PV}/${P}.tar.
 
 LICENSE="Apache-2.0 BSD MIT"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 IUSE="test"
 REQUIRED_USE="${PYTHON_REQUIRED_USE}"
 RESTRICT="!test? ( test )"

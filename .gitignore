@@ -1,6 +1,9 @@
 # Portage/pkgcore regenerate this; do not track it.
 /metadata/md5-cache/
 
+# hackport's local hackage index (~1.2G), refreshed with "hackport update"
+/.hackport/
+
 # Editor and interpreter leftovers
 *~
 *.swp

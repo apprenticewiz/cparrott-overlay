@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="project">
+		<email>haskell@gentoo.org</email>
+		<name>Gentoo Haskell</name>
+	</maintainer>
+	<use>
+		<flag name="system-erf">Use erf and erfc provided by system. On GHCJS
+version provided by library is used regardless of
+flag for that lack of libc.</flag>
+		<flag name="system-expm1">Use expm1 provided by GHC. On GHCJS we don&#39;t have one so we
+have to use hand-coded one.</flag>
+	</use>
+	<upstream>
+		<remote-id type="hackage">math-functions</remote-id>
+		<remote-id type="github">bos/math-functions</remote-id>
+		<remote-id type="github">haskell/math-functions</remote-id>
+	</upstream>
+</pkgmetadata>

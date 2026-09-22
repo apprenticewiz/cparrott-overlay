@@ -76,6 +76,18 @@ DEPEND="${RDEPEND}
 	dev-haskell/happy
 "
 
+src_prepare() {
+	haskell-cabal_src_prepare
+
+	# 'futhark-testing' is a private sublibrary used only by the test-suite
+	# and benchmark stanzas. './setup configure' configures every library in
+	# the package regardless of --disable-tests, so leaving it enabled would
+	# demand criterion, lsp-test, tasty-hunit and tasty-quickcheck purely to
+	# configure code we never build.
+	sed -i '/^library futhark-testing$/,/^$/ s/^\(  import: common\)$/\1\n  buildable: False/' \
+		"${CABAL_PN}.cabal" || die
+}
+
 pkg_postinst() {
 	elog "The C backend needs a C compiler. Optional backends also need:"
 	elog "  OpenCL: virtual/opencl and OpenCL headers"

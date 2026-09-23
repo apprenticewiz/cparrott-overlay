@@ -18,7 +18,7 @@ S="${WORKDIR}/clasp-${PV}"
 
 LICENSE="LGPL-2+ Sleepycat MIT public-domain"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 RESTRICT="strip"
 
 # Arch AUR clasp-cl 3.0.1-2: koga --skip-sync --reproducible-build with

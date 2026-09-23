@@ -12,7 +12,7 @@ S="${WORKDIR}"/${PN}-Version_2_6_15pre3/${PN}
 
 LICENSE="LGPL-2+ GPL-2+"
 SLOT="0"
-KEYWORDS="~amd64 ~arm ~ppc ~ppc64 ~riscv ~x86"
+KEYWORDS="~amd64 ~arm ~arm64 ~ppc ~ppc64 ~riscv ~x86"
 IUSE="+ansi athena doc emacs +readline tk X"
 RESTRICT="strip"  #205803
 

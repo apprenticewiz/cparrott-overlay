@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+
+<pkgmetadata>
+  <maintainer type="person">
+    <email>cparrott@jabbah</email>
+    <name>Chris Parrott</name>
+  </maintainer>
+  <longdescription>
+    Standard ML of New Jersey (abbreviated SML/NJ) is a compiler for
+    the Standard ML '97 programming language with associated libraries,
+    tools, and documentation. SML/NJ is free, open source software.
+
+    This is the modern release series, which replaced the MLRISC code
+    generator of the 110.99.x line with one built on LLVM and added
+    support for Arm64.
+  </longdescription>
+  <upstream>
+    <remote-id type="github">smlnj/smlnj</remote-id>
+  </upstream>
+</pkgmetadata>

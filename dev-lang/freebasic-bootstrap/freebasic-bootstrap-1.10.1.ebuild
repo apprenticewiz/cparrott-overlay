@@ -13,10 +13,15 @@ S="${WORKDIR}/FreeBASIC-${PV}-source-bootstrap"
 LICENSE="GPL-2+ LGPL-2.1+"
 SLOT="0"
 # Pre-translated C lives under bootstrap/linux-$(arch); this is not a generic source build.
-KEYWORDS="-* ~amd64 ~arm64"
+KEYWORDS="-* ~amd64 ~arm64 ~riscv"
 
 RDEPEND="sys-libs/ncurses:="
 DEPEND="${RDEPEND}"
+
+PATCHES=(
+	# Adds the linux-riscv64 target and its pre-translated bootstrap/ tree.
+	"${FILESDIR}"/freebasic-${PV}-bootstrap-riscv64.patch
+)
 
 # fbc with no ENABLE_PREFIX resolves its own prefix as $(dirname $(exepath))/..,
 # then looks for <prefix>/lib/freebasic/<target> and <prefix>/include/freebasic.

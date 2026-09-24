@@ -1,0 +1,332 @@
+diff --git a/makefile b/makefile
+index 4ce5ba3..a7a455b 100644
+--- a/makefile
++++ b/makefile
+@@ -441,7 +441,7 @@ else
+   #    lib/freebasic/<fbtarget>/
+   libdirname := lib
+   ifdef ENABLE_LIB64
+-    ifneq ($(filter x86_64 aarch64,$(TARGET_ARCH)),)
++    ifneq ($(filter x86_64 aarch64 riscv64,$(TARGET_ARCH)),)
+       libdirname := lib64
+     endif
+   endif
+@@ -1336,6 +1336,7 @@ bootstrap-dist:
+ 	mkdir -p bootstrap/win64
+ 	mkdir -p bootstrap/linux-arm
+ 	mkdir -p bootstrap/linux-aarch64
++	mkdir -p bootstrap/linux-riscv64
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target dos                 && mv src/compiler/*.asm bootstrap/dos
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target freebsd-x86         && mv src/compiler/*.asm bootstrap/freebsd-x86
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target freebsd-x86_64      && mv src/compiler/*.c   bootstrap/freebsd-x86_64
+@@ -1351,6 +1352,7 @@ bootstrap-dist:
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target win64               && mv src/compiler/*.c   bootstrap/win64
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-arm           && mv src/compiler/*.c   bootstrap/linux-arm
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-aarch64       && mv src/compiler/*.c   bootstrap/linux-aarch64
++	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-riscv64       && mv src/compiler/*.c   bootstrap/linux-riscv64
+ 
+ 	# Ensure to have LFs regardless of host system (LFs will probably work
+ 	# on DOS/Win32, but CRLFs could cause issues on Linux)
+@@ -1369,6 +1371,7 @@ bootstrap-dist:
+ 	dos2unix bootstrap/win64/*
+ 	dos2unix bootstrap/linux-arm/*
+ 	dos2unix bootstrap/linux-aarch64/*
++	dos2unix bootstrap/linux-riscv64/*
+ 
+ 	# Package FB sources (similar to our "gitdist" command), and add the bootstrap/ directory
+ 	# Making a .tar.xz should be good enough for now.
+diff --git a/src/compiler/fb.bas b/src/compiler/fb.bas
+index 97f4c15..ecbcfe3 100644
+--- a/src/compiler/fb.bas
++++ b/src/compiler/fb.bas
+@@ -240,7 +240,8 @@ dim shared as FBCPUFAMILYINFO cpufamilyinfo(0 to FB_CPUFAMILY__COUNT-1) = _
+ 	(@"powerpc"    , FB_DEFAULT_CPUTYPE_PPC    ), _
+ 	(@"powerpc64"  , FB_DEFAULT_CPUTYPE_PPC64  ), _
+ 	(@"powerpc64le", FB_DEFAULT_CPUTYPE_PPC64LE), _
+-	(@"asmjs"      , FB_DEFAULT_CPUTYPE_ASMJS  )  _
++	(@"asmjs"      , FB_DEFAULT_CPUTYPE_ASMJS  ), _
++	(@"riscv64"    , FB_DEFAULT_CPUTYPE_RISCV64)  _
+ }
+ 
+ type FBCPUTYPEINFO
+@@ -273,7 +274,8 @@ dim shared as FBCPUTYPEINFO cputypeinfo(0 to FB_CPUTYPE__COUNT-1) = _
+ 	( NULL       , @"powerpc"      , FB_CPUFAMILY_PPC    , 32, TRUE  ), _ '' FB_CPUTYPE_PPC
+ 	( NULL       , @"powerpc64"    , FB_CPUFAMILY_PPC64  , 64, TRUE  ), _ '' FB_CPUTYPE_PPC64
+ 	( NULL       , @"powerpc64le"  , FB_CPUFAMILY_PPC64LE, 64, FALSE ), _ '' FB_CPUTYPE_PPC64LE
+-	( NULL       , @"asmjs"        , FB_CPUFAMILY_ASMJS  , 32, FALSE )  _ '' FB_CPUTYPE_ASMJS
++	( NULL       , @"asmjs"        , FB_CPUFAMILY_ASMJS  , 32, FALSE ), _ '' FB_CPUTYPE_ASMJS
++	( @"rv64gc"  , @"riscv64"      , FB_CPUFAMILY_RISCV64, 64, FALSE )  _ '' FB_CPUTYPE_RISCV64
+ }
+ 
+ ''::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+@@ -919,6 +921,7 @@ private function hGetTargetId _
+ 	''    linux-x86_64
+ 	''    linux-arm
+ 	''    linux-aarch64
++	''    linux-riscv64
+ 	''    freebsd-x86
+ 	''    freebsd-x86_64
+ 	''    freebsd-powerpc | freebsd-ppc
+@@ -1047,6 +1050,8 @@ function fbIdentifyFbcArch( byref fbcarch as string ) as integer
+ 	select case( fbcarch )
+ 	case "x86_64", "amd64"
+ 		function = FB_CPUTYPE_X86_64
++	case "rv64gc"
++		function = FB_CPUTYPE_RISCV64
+ 	case else
+ 		function = -1
+ 	end select
+@@ -1737,6 +1742,9 @@ function fbGetBackendValistType _
+ 		case FB_CPUFAMILY_PPC64, FB_CPUFAMILY_PPC64LE
+ 			typedef = FB_CVA_LIST_BUILTIN_POINTER
+ 
++		case FB_CPUFAMILY_RISCV64
++			typedef = FB_CVA_LIST_BUILTIN_POINTER
++
+ 		case else
+ 			typedef = FB_CVA_LIST_BUILTIN_POINTER
+ 
+diff --git a/src/compiler/fb.bi b/src/compiler/fb.bi
+index 494be45..bb4c79c 100644
+--- a/src/compiler/fb.bi
++++ b/src/compiler/fb.bi
+@@ -170,6 +170,7 @@ enum FB_CPUTYPE
+ 	FB_CPUTYPE_PPC64
+ 	FB_CPUTYPE_PPC64LE
+ 	FB_CPUTYPE_ASMJS
++	FB_CPUTYPE_RISCV64
+ 	FB_CPUTYPE__COUNT
+ end enum
+ 
+@@ -182,6 +183,7 @@ enum
+ 	FB_CPUFAMILY_PPC64
+ 	FB_CPUFAMILY_PPC64LE
+ 	FB_CPUFAMILY_ASMJS
++	FB_CPUFAMILY_RISCV64
+ 	FB_CPUFAMILY__COUNT
+ end enum
+ 
+@@ -415,6 +417,7 @@ const FB_DEFAULT_CPUTYPE_PPC     = FB_CPUTYPE_PPC
+ const FB_DEFAULT_CPUTYPE_PPC64   = FB_CPUTYPE_PPC64
+ const FB_DEFAULT_CPUTYPE_PPC64LE = FB_CPUTYPE_PPC64LE
+ const FB_DEFAULT_CPUTYPE_ASMJS   = FB_CPUTYPE_ASMJS
++const FB_DEFAULT_CPUTYPE_RISCV64 = FB_CPUTYPE_RISCV64
+ 
+ #ifdef __FB_ARM__
+ 	const FB_DEFAULT_CPUTYPE32 = FB_DEFAULT_CPUTYPE_ARM
+@@ -426,6 +429,10 @@ const FB_DEFAULT_CPUTYPE_ASMJS   = FB_CPUTYPE_ASMJS
+ 	#else
+ 		const FB_DEFAULT_CPUTYPE64 = FB_DEFAULT_CPUTYPE_PPC64LE
+ 	#endif
++#elseif defined(__FB_RISCV__)
++	'' no 32-bit RISC-V target yet
++	const FB_DEFAULT_CPUTYPE32 = FB_DEFAULT_CPUTYPE_RISCV64
++	const FB_DEFAULT_CPUTYPE64 = FB_DEFAULT_CPUTYPE_RISCV64
+ #elseif defined(__FB_X86__)
+ 	const FB_DEFAULT_CPUTYPE32 = FB_DEFAULT_CPUTYPE_X86
+ 	const FB_DEFAULT_CPUTYPE64 = FB_DEFAULT_CPUTYPE_X86_64
+diff --git a/src/compiler/fbc.bas b/src/compiler/fbc.bas
+index 07b5e12..368f974 100644
+--- a/src/compiler/fbc.bas
++++ b/src/compiler/fbc.bas
+@@ -868,6 +868,8 @@ private function hLinkFiles( ) as integer
+ 					ldcline += " -dynamic-linker /lib/ld-linux-armhf.so.3"
+ 				case FB_CPUFAMILY_AARCH64
+ 					ldcline += " -dynamic-linker /lib/ld-linux-aarch64.so.1"
++				case FB_CPUFAMILY_RISCV64
++					ldcline += " -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1"
+ 				end select
+ 			case FB_COMPTARGET_NETBSD
+ 				ldcline += " -dynamic-linker /usr/libexec/ld.elf_so"
+@@ -1180,7 +1182,8 @@ private function hLinkFiles( ) as integer
+ 		if outtype = FB_OUTTYPE_EXECUTABLE OrElse outtype = FB_OUTTYPE_DYNAMICLIB Then
+ 			dim as long cpufamily = fbGetCpuFamily( )
+ 			if cpufamily = FB_CPUFAMILY_X86_64 OrElse cpufamily = FB_CPUFAMILY_AARCH64 OrElse _
+-				cpuFamily = FB_CPUFAMILY_PPC64 OrElse cpufamily = FB_CPUFAMILY_PPC64LE Then
++				cpuFamily = FB_CPUFAMILY_PPC64 OrElse cpufamily = FB_CPUFAMILY_PPC64LE OrElse _
++				cpufamily = FB_CPUFAMILY_RISCV64 Then
+ 				ldcline += " --eh-frame-hdr"
+ 			end if
+ 		end if
+@@ -1518,7 +1521,8 @@ dim shared as FBGNUARCHINFO gnuarchmap(0 to ...) => _
+ 	(@"ppc64  "    , FB_DEFAULT_CPUTYPE_PPC64  ), _
+ 	(@"powerpc64"  , FB_DEFAULT_CPUTYPE_PPC64  ),  _
+ 	(@"ppc64le  "  , FB_DEFAULT_CPUTYPE_PPC64LE), _
+-	(@"powerpc64le", FB_DEFAULT_CPUTYPE_PPC64LE)  _
++	(@"powerpc64le", FB_DEFAULT_CPUTYPE_PPC64LE), _
++	(@"riscv64"    , FB_DEFAULT_CPUTYPE_RISCV64)  _
+ }
+ 
+ '' Identify OS (FB_COMPTARGET_*) and architecture (FB_CPUTYPE_*) in a GNU
+@@ -3412,6 +3416,9 @@ private function hCompileStage2Module( byval module as FBCIOFILE ptr ) as intege
+ 		case FB_CPUFAMILY_PPC64, FB_CPUFAMILY_PPC64LE
+ 			ln += "-m64 "
+ 			ism64Target = True
++		case FB_CPUFAMILY_RISCV64
++			'' gcc selects 32/64-bit RISC-V via -march/-mabi, it has no -m64
++			ism64Target = True
+ 		end select
+ 
+ 		if( fbGetOption( FB_COMPOPT_TARGET ) <> FB_COMPTARGET_JS ) then
+@@ -3572,6 +3579,8 @@ private function hCompileStage2Module( byval module as FBCIOFILE ptr ) as intege
+ 			ln += "-mcpu=powerpc64 "
+ 		case FB_CPUFAMILY_PPC64LE
+ 			ln += "-mcpu=powerpc64le "
++		case FB_CPUFAMILY_RISCV64
++			ln += "-march=riscv64 -mattr=+m,+a,+f,+d,+c "
+ 		end select
+ 
+ 		if( fbGetOption( FB_COMPOPT_PIC ) ) then
+diff --git a/src/compiler/objinfo.bas b/src/compiler/objinfo.bas
+index 60ea4a9..960e921 100644
+--- a/src/compiler/objinfo.bas
++++ b/src/compiler/objinfo.bas
+@@ -86,7 +86,7 @@
+ ''    reads the currently loaded object file,
+ ''    using either the COFF (Win32, DOS), ELF32/64 (Linux, *BSD) or
+ ''    Mach-O (Darwin) format.
+-''    ELF32 (linux-arm) or ELF64 (linux-aarch64)
++''    ELF32 (linux-arm) or ELF64 (linux-aarch64, linux-riscv64)
+ ''    looks for the .fbctinf section,
+ ''    and if found, parses its content, and tells the frontend about the
+ ''    found libraries etc. by using the callbacks.
+@@ -192,6 +192,7 @@ const EM_ARM32 = &h28
+ const EM_AARCH64 = &hb7
+ const EM_PPC = &h14
+ const EM_PPC64 = &h15
++const EM_RISCV = &hf3
+ 
+ '' ELF section headers
+ type ELF32_SH field = 1
+@@ -890,6 +891,9 @@ private sub hLoadFbctinfFromObj( )
+ 		case FB_CPUFAMILY_PPC
+ 			INFO( "reading powerpc32 ELF: " + parser.filename )
+ 			hLoadFbctinfFromELF32_H( EM_PPC )
++		case FB_CPUFAMILY_RISCV64
++			INFO( "reading riscv64 ELF: " + parser.filename )
++			hLoadFbctinfFromELF64_H( EM_RISCV )
+ 		end select
+ 	elseif( fbTargetSupportsMachO( ) ) then
+ 		INFO( "reading Mach-O: " + parser.filename )
+diff --git a/src/compiler/symb-define.bas b/src/compiler/symb-define.bas
+index 5c54118..fac72ce 100644
+--- a/src/compiler/symb-define.bas
++++ b/src/compiler/symb-define.bas
+@@ -1361,6 +1361,8 @@ sub symbDefineInit _
+ 		symbAddDefine( @"__FB_ASM__", NULL, 0, FALSE, @hDefAsm_cb, FB_DEFINE_FLAGS_STR )
+ 	case FB_CPUFAMILY_PPC, FB_CPUFAMILY_PPC64, FB_CPUFAMILY_PPC64LE
+ 		symbAddDefine( @"__FB_PPC__", NULL, 0 )
++	case FB_CPUFAMILY_RISCV64
++		symbAddDefine( @"__FB_RISCV__", NULL, 0 )
+ 	end select
+ 
+ 	if( fbIsHostBigEndian( ) ) then
+diff --git a/src/rtlib/fb_config.h b/src/rtlib/fb_config.h
+index 1ea5e9f..c1acd60 100644
+--- a/src/rtlib/fb_config.h
++++ b/src/rtlib/fb_config.h
+@@ -63,6 +63,8 @@
+ 	#define HOST_64BIT
+ #elif defined __aarch64__
+ 	#define HOST_64BIT
++#elif defined __riscv && __riscv_xlen == 64
++	#define HOST_64BIT
+ #endif
+ 
+ #ifdef HOST_MINGW
+diff --git a/tests/fbcprint/makefile b/tests/fbcprint/makefile
+index dccc9aa..a280533 100644
+--- a/tests/fbcprint/makefile
++++ b/tests/fbcprint/makefile
+@@ -22,6 +22,7 @@ all:
+ 	$(call test,-print target -target freebsd-x86)
+ 	$(call test,-print target -target freebsd-x86_64)
+ 	$(call test,-print target -target linux-aarch64)
++	$(call test,-print target -target linux-riscv64)
+ 	$(call test,-print target -target linux-arm)
+ 	$(call test,-print target -target linux-x86)
+ 	$(call test,-print target -target linux-x86_64)
+diff --git a/tests/fbcprint/results.txt b/tests/fbcprint/results.txt
+index cd71e20..ae2dcf0 100644
+--- a/tests/fbcprint/results.txt
++++ b/tests/fbcprint/results.txt
+@@ -12,6 +12,7 @@
+ -print target -target freebsd-x86 = freebsd-x86
+ -print target -target freebsd-x86_64 = freebsd-x86_64
+ -print target -target linux-aarch64 = linux-aarch64
++-print target -target linux-riscv64 = linux-riscv64
+ -print target -target linux-arm = linux-arm
+ -print target -target linux-x86 = linux-x86
+ -print target -target linux-x86_64 = linux-x86_64
+diff --git a/tests/numbers/infnan.bas b/tests/numbers/infnan.bas
+index 22ab89d..7fdafd4 100644
+--- a/tests/numbers/infnan.bas
++++ b/tests/numbers/infnan.bas
+@@ -14,10 +14,10 @@ SUITE( fbc_tests.numbers.infnan )
+ 
+ 		#macro checkD( d, x )
+ 			'' The sign bit for NaN results is unspecified by IEEE754,
+-			'' and x86 and ARM differ in its selection.
++			'' and x86 and ARM / RISC-V differ in its selection.
+ 			'' Appears to be ditto for emscripten
+ 			'' Little-endian assumption casting double ptr to ulongint ptr
+-			#if defined( __FB_ARM__ ) or defined( __FB_JS__ )
++			#if defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_JS__ )
+ 				#if( (x = NEGNAND) or (x = POSNAND) )
+ 					CU_ASSERT( ((*cptr( ulongint ptr, @d )) and SGNMASK) = POSNAND )
+ 				#else
+@@ -122,10 +122,10 @@ SUITE( fbc_tests.numbers.infnan )
+ 
+ 		#macro checkF( f, x )
+ 			'' The sign bit for NaN results is unspecified by IEEE754,
+-			'' and x86 and ARM differ in its selection.
++			'' and x86 and ARM / RISC-V differ in its selection.
+ 			'' Appears to be ditto for emscripten
+ 			'' Little-endian assumption casting double ptr to ulongint ptr
+-			#if defined( __FB_ARM__ ) or defined( __FB_JS__ )
++			#if defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_JS__ )
+ 				#if( (x = NEGNANF) or (x = POSNANF) )
+ 					CU_ASSERT( ((*cptr( ulong ptr, @f )) and SGNMASK) = POSNANF )
+ 				#else
+diff --git a/tests/string/print_using.bas b/tests/string/print_using.bas
+index 2d08b75..4f83355 100644
+--- a/tests/string/print_using.bas
++++ b/tests/string/print_using.bas
+@@ -394,10 +394,14 @@ SUITE( fbc_tests.string_.print_using )
+ 		test_sng( fmt, -inf, "-1.#INF" )
+ 
+ 		test_sng( fmt,  nan, "+1.#NAN" )
++		'' riscv: single->double conversion (fcvt.d.s) yields the canonical
++		'' (positive) NaN, so the sign of -nan is lost
++		#if not defined( __FB_RISCV__ ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 		test_sng( fmt, -nan, "-1.#NAN" )
++		#endif
+ 
+-		'' arm targets only return NAN instead of IND? and different signs??
+-		#if not defined( __FB_ARM__ ) or ( ENABLE_CHECK_BUGS <> 0 )
++		'' arm / riscv targets only return NAN instead of IND? and different signs??
++		#if not ( defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 
+ 		test_sng( fmt, ind, "-1.#IND" )
+ 
+diff --git a/tests/wstring/print_using.bas b/tests/wstring/print_using.bas
+index 9c9c86a..1283406 100644
+--- a/tests/wstring/print_using.bas
++++ b/tests/wstring/print_using.bas
+@@ -396,10 +396,14 @@ SUITE( fbc_tests.wstring_.print_using )
+ 		test_sng( fmt, -inf, "-1.#INF" )
+ 
+ 		test_sng( fmt,  nan, "+1.#NAN" )
++		'' riscv: single->double conversion (fcvt.d.s) yields the canonical
++		'' (positive) NaN, so the sign of -nan is lost
++		#if not defined( __FB_RISCV__ ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 		test_sng( fmt, -nan, "-1.#NAN" )
++		#endif
+ 
+-		'' arm targets only return NAN instead of IND? and different signs??
+-		#if not defined( __FB_ARM__ ) or ( ENABLE_CHECK_BUGS <> 0 )
++		'' arm / riscv targets only return NAN instead of IND? and different signs??
++		#if not ( defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 
+ 		test_sng( fmt, ind, "-1.#IND" )
+ 

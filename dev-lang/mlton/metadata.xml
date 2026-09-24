@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+
+<pkgmetadata>
+  <maintainer type="person">
+    <email>cparrott@jabbah</email>
+    <name>Chris Parrott</name>
+  </maintainer>
+  <longdescription>
+    MLton is a whole-program optimizing compiler for the Standard ML
+    programming language. It is built from source using the upstream
+    release binary as the bootstrap compiler.
+  </longdescription>
+  <use>
+    <flag name="binary">Install the upstream prebuilt compiler instead of
+    building it from source (the source build self-compiles MLton and takes
+    a long time)</flag>
+  </use>
+  <upstream>
+    <remote-id type="github">MLton/mlton</remote-id>
+    <remote-id type="sourceforge">mlton</remote-id>
+  </upstream>
+</pkgmetadata>

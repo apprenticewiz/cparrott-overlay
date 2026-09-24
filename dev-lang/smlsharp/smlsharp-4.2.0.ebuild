@@ -17,6 +17,8 @@ LICENSE="MIT"
 SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 IUSE="test"
+# The aarch64 GC fix needs the LLVM 20 AsmPrinter handler API.
+REQUIRED_USE="arm64? ( llvm_slot_20 )"
 RESTRICT="!test? ( test )"
 
 # AUR smlsharp 4.2.0-1: official tarball, ./configure --prefix=/usr,
@@ -40,6 +42,7 @@ BDEPEND="
 
 PATCHES=(
 	"${FILESDIR}/${P}-remove-tz-test.patch"
+	"${FILESDIR}/${P}-aarch64-gc.patch"
 )
 
 pkg_setup() {

@@ -1,0 +1,478 @@
+Fix the GC stack walker on aarch64. The runtime assumed the saved
+link register sits in the topmost slot of every ML frame and that the
+C primitives' frame record is at the top of their frame; neither holds
+with LLVM/GCC on AArch64, so the collector read garbage return
+addresses and aborted in sml_lookup_frametable.
+
+- smlsharp_gc plugin (LLVM >= 20): record each function's LR spill
+  slot from its callee-saved info and emit it in the frame table.
+- runtime: walk frames with that per-function offset, locate the
+  caller frame with the CFA, and record the top frame's code address
+  when a stack range is closed (bl leaves it only in x30).
+
+--- a/src/llvm/main/smlsharp_gc.cpp
++++ b/src/llvm/main/smlsharp_gc.cpp
+@@ -16,8 +16,17 @@
+ #endif
+ #include <llvm/CodeGen/GCMetadata.h>
+ #include <llvm/CodeGen/GCMetadataPrinter.h>
++#if LLVM_VERSION_MAJOR >= 20
++#include <llvm/ADT/DenseMap.h>
++#include <llvm/CodeGen/AsmPrinterHandler.h>
++#include <llvm/CodeGen/MachineFrameInfo.h>
++#include <llvm/CodeGen/MachineFunction.h>
++#include <llvm/CodeGen/TargetRegisterInfo.h>
++#include <llvm/CodeGen/TargetSubtargetInfo.h>
++#endif
+ #include <llvm/MC/MCStreamer.h>
+ #include <llvm/MC/MCSymbol.h>
++#include <llvm/Target/TargetMachine.h>
+ #if LLVM_VERSION_MAJOR == 6
+ #include <llvm/CodeGen/TargetLoweringObjectFile.h>
+ #else
+@@ -44,8 +53,47 @@
+ };
+ class SMLSharpGCPrinter : public GCMetadataPrinter {
+ public:
++#if LLVM_VERSION_MAJOR >= 20
++	/* where each function saved its return address, in words below
++	 * the frame begin (the stack pointer on function entry). */
++	DenseMap<const Function *, uint64_t> RetOffsets;
++	void beginAssembly(Module &, GCModuleInfo &, AsmPrinter &) override;
++#endif
+ 	void finishAssembly(Module &, GCModuleInfo &, AsmPrinter &) override;
+ };
++
++#if LLVM_VERSION_MAJOR >= 20
++/*
++ * On AArch64, the return address is saved in one of the callee-save
++ * slots, and which one depends on the other registers the function
++ * saves.  Record it while the MachineFunction is still alive.
++ */
++class RetOffsetRecorder : public AsmPrinterHandler {
++	DenseMap<const Function *, uint64_t> &RetOffsets;
++public:
++	RetOffsetRecorder(DenseMap<const Function *, uint64_t> &r)
++		: RetOffsets(r) {}
++	void endModule() override {}
++	void beginFunction(const MachineFunction *) override {}
++	void endFunction(const MachineFunction *mf) override {
++		if (!mf->getTarget().getTargetTriple().isAArch64())
++			return;
++		const MachineFrameInfo &mfi = mf->getFrameInfo();
++		if (!mfi.isCalleeSavedInfoValid())
++			return;
++		MCRegister ra = mf->getSubtarget().getRegisterInfo()
++			->getRARegister();
++		for (const CalleeSavedInfo &cs : mfi.getCalleeSavedInfo()) {
++			if (cs.getReg() != ra || cs.isSpilledToReg())
++				continue;
++			int64_t offset = mfi.getObjectOffset(cs.getFrameIdx());
++			if (offset >= 0 || offset % 8 != 0)
++				report_fatal_error("SML#: unexpected return address slot");
++			RetOffsets[&mf->getFunction()] = -offset / 8;
++		}
++	}
++};
++#endif
+ }
+ 
+ static GCRegistry::Add<SMLSharpGC> X("smlsharp", "SML#");
+@@ -95,12 +143,14 @@
+  *     uint16_t   NumSafePoints;
+  *     uint16_t   FrameSize;                        // in words
+  *     uint16_t   NumRoots;
++ *     uint16_t   RetOffset;                        // in words, AArch64 only
+  *     uint16_t   RootOffsets[NumRoots];            // in words
+  *     uintptr_t  SafePointOffsets[NumSafePoints];  // in bytes
+  *   } Descriptors[]; // terminated with NumSafePoints == 0
+  */
+ static void
+-EmitFunctionInfo(AsmPrinter &ap, GCFunctionInfo &fi, MCSymbol *base)
++EmitFunctionInfo(AsmPrinter &ap, GCFunctionInfo &fi, MCSymbol *base,
++		 uint64_t retOffset)
+ {
+ 	// skip functions that have no safe point.
+ 	if (fi.size() == 0) return;
+@@ -110,6 +160,7 @@
+ 	EmitUInt16(ap, fi.size());
+ 	EmitUInt16(ap, fi.getFrameSize(), ptrsize);
+ 	EmitUInt16(ap, fi.roots_size());
++	EmitUInt16(ap, retOffset);
+ 
+ 	// LLVM does not compute the live set of each safe point
+ 	// (live_begin is an alias of roots_begin).
+@@ -122,9 +173,18 @@
+ 		ap.OutStreamer->emitAbsoluteSymbolDiff(p.Label, base, ptrsize);
+ }
+ 
++#if LLVM_VERSION_MAJOR >= 20
++void
++SMLSharpGCPrinter::beginAssembly(Module &, GCModuleInfo &, AsmPrinter &ap)
++{
++	ap.addAsmPrinterHandler(std::make_unique<RetOffsetRecorder>(RetOffsets));
++}
++#endif
++
+ void
+ SMLSharpGCPrinter::finishAssembly(Module &m, GCModuleInfo &info, AsmPrinter &ap)
+ {
++	bool aarch64 = ap.TM.getTargetTriple().isAArch64();
+ 	const auto *tabb = FindFunction(m, "_SML_tabb");
+ #if LLVM_VERSION_MAJOR <= 10
+ 	std::string id = tabb ? tabb->getName().substr(9) : "";
+@@ -156,8 +216,20 @@
+ #endif
+ 
+ 	for (auto i = info.funcinfo_begin(); i != info.funcinfo_end(); ++i) {
+-		if ((*i)->getStrategy().getName() == getStrategy().getName())
+-			EmitFunctionInfo(ap, **i, sml_tabb);
++		if ((*i)->getStrategy().getName() == getStrategy().getName()) {
++			uint64_t retOffset = 0;
++			if (aarch64 && (*i)->size() > 0) {
++#if LLVM_VERSION_MAJOR >= 20
++				auto r = RetOffsets.find(&(*i)->getFunction());
++				if (r == RetOffsets.end())
++					report_fatal_error("SML#: return address slot not found");
++				retOffset = r->second;
++#else
++				retOffset = 1;
++#endif
++			}
++			EmitFunctionInfo(ap, **i, sml_tabb, retOffset);
++		}
+ 		EmitAlignPtrSize(ap);
+ 	}
+ 	EmitUInt16(ap, 0);
+--- a/src/runtime/smlsharp.h
++++ b/src/runtime/smlsharp.h
+@@ -342,6 +342,7 @@
+ 	uint16_t num_safe_points;
+ 	uint16_t frame_size;      /* in words */
+ 	uint16_t num_roots;
++	uint16_t ret_offset;      /* in words below the frame begin (ARM only) */
+ 	uint16_t root_offsets[];  /* in words */
+ };
+ 
+@@ -389,7 +390,7 @@
+ extern _Atomic(unsigned int) sml_check_flag;
+ /* the main routine of garbage collection */
+ unsigned long sml_gc(int);
+-unsigned long sml_wait_gc(void *);
++unsigned long sml_wait_gc(void *frame_pointer, void *code);
+ 
+ struct sml_user;
+ struct sml_worker;
+@@ -419,7 +420,7 @@
+ 	DUMMY_PHASE = 16        /* used for worker initialization */
+ };
+ 
+-void sml_check_internal(void *frame_pointer);
++void sml_check_internal(void *frame_pointer, void *code);
+ enum sml_sync_phase sml_current_phase(void);
+ int sml_saved(void); /* for debug */
+ 
+@@ -430,15 +431,30 @@
+  * stack frame address
+  * FIXME: platform dependent
+  */
+-#define CALLER_FRAME_END_ADDRESS() \
+-	((void**)__builtin_frame_address(0) + 2)
+ #define FRAME_CODE_ADDRESS(frame_end) \
+ 	(*((void**)(frame_end) - 1))
++/* a safe point in the ML function that called the current primitive */
++#define CALLER_CODE_ADDRESS() __builtin_return_address(0)
+ #ifdef HOST_CPU_i386
++#define CALLER_FRAME_END_ADDRESS() \
++	((void**)__builtin_frame_address(0) + 2)
+ #define NEXT_FRAME(frame_begin) \
+ 	((void**)frame_begin + 1)
++#define FRAME_RETURN_ADDRESS(frame_begin, layout) \
++	FRAME_CODE_ADDRESS(NEXT_FRAME(frame_begin))
++#define TOP_FRAME_CODE_ADDRESS(top, top_code) FRAME_CODE_ADDRESS(top)
+ #elif HOST_CPU_ARM
++/* A call does not store the return address in memory, so the slot below
++ * the top frame is only valid while the callee that saved it is running.
++ * The code address of the top frame is recorded when the range closes. */
++#define TOP_FRAME_CODE_ADDRESS(top, top_code) (top_code)
++/* The frame record is not necessarily at the top of the frame, so the
++ * frame pointer does not locate the caller's stack pointer; the CFA does. */
++#define CALLER_FRAME_END_ADDRESS() ((void**)__builtin_dwarf_cfa())
+ #define NEXT_FRAME(frame_begin) ((void**)frame_begin)
++/* the saved link register is not necessarily at the top of the frame. */
++#define FRAME_RETURN_ADDRESS(frame_begin, layout) \
++	(*((void**)(frame_begin) - (layout)->ret_offset))
+ #endif
+ 
+ /*
+--- a/src/runtime/control.c
++++ b/src/runtime/control.c
+@@ -65,6 +65,12 @@
+ 		void *bottom, *top;
+ 		struct frame_stack_range *next;
+ 	} *stack;
++	/* The code address of the top frame of each closed stack range
++	 * (see TOP_FRAME_CODE_ADDRESS).  top_codes[depth - 1] belongs to
++	 * the first range of stack.  A range is allocated by the ML code
++	 * that calls sml_start and has no room for this. */
++	void **top_codes;
++	unsigned int depth, top_codes_size;
+ 	/* 例外がraiseされてからhandleされるまでの間に一旦MLコードを離れる
+ 	 * ときに，raiseされた例外オブジェクト（MLのexnではなく，それを運ぶ
+ 	 * Itanium ABIのオブジェクト）を生かしておくためのポインタ．
+@@ -646,13 +652,14 @@
+ }
+ 
+ static void
+-sml_leave_internal(void *frame_pointer)
++sml_leave_internal(void *frame_pointer, void *code)
+ {
+ 	struct sml_worker *worker = worker_tlv_get(current_worker);
+ 	struct sml_user *user = worker->current_user;
+ 
+ 	/* userのスタック範囲を閉じる（topをセット）*/
+ 	assert(user->stack->top == NULL);
++	user->top_codes[user->depth - 1] = code;
+ 	user->stack->top = frame_pointer;
+ 
+ 	/* MLコードに復帰するときのためにuserをcurrent_userに覚えておく．
+@@ -674,7 +681,7 @@
+ SML_PRIMITIVE void
+ sml_leave()
+ {
+-	sml_leave_internal(CALLER_FRAME_END_ADDRESS());
++	sml_leave_internal(CALLER_FRAME_END_ADDRESS(), CALLER_CODE_ADDRESS());
+ }
+ 
+ static void
+@@ -894,6 +901,9 @@
+ 		/* userの中身をnew_userにコピーする */
+ 		new_user->stack = user->stack;
+ 		new_user->exn_object = user->exn_object;
++		new_user->top_codes = user->top_codes;
++		new_user->depth = user->depth;
++		new_user->top_codes_size = user->top_codes_size;
+ 
+ 		/* new_userをworkerに登録する */
+ 		atomic_init(&new_user->flags, 0);
+@@ -937,6 +947,7 @@
+ 	struct sml_user *user = worker->current_user;
+ 	assert(IS_ACTIVE(load_relaxed(&worker->state)));
+ 	assert(user->stack->top == NULL);
++	user->top_codes[user->depth - 1] = CALLER_CODE_ADDRESS();
+ 	user->stack->top = CALLER_FRAME_END_ADDRESS();
+ }
+ 
+@@ -1088,6 +1099,9 @@
+ 		user->stack = range;
+ 		user->stack->next = NULL;
+ 		user->exn_object = NULL;
++		user->top_codes_size = 4;
++		user->top_codes = xmalloc(sizeof(void*) * user->top_codes_size);
++		user->depth = 1;
+ 
+ 		/* workerに登録する．enter_workerを呼んだので，ワーカー
+ 		 * コンテキストへの排他的アクセスをすでに持っている．*/
+@@ -1105,6 +1119,13 @@
+ 	} else {
+ 		range->next = user->stack;
+ 		user->stack = range;
++		if (user->depth == user->top_codes_size) {
++			user->top_codes_size *= 2;
++			user->top_codes =
++				xrealloc(user->top_codes,
++					 sizeof(void*) * user->top_codes_size);
++		}
++		user->depth++;
+ 
+ 		/* MLコードに復帰したときcurrent_userをNULLクリアする．
+ 		 * 前述の通り，MLコードにいる間は常にcurrent_userが
+@@ -1126,6 +1147,11 @@
+ 
+ 	/* 先頭のスタック範囲を取り除く */
+ 	user->stack = user->stack->next;
++	user->depth--;
++	if (!user->stack) {
++		free(user->top_codes);
++		user->top_codes = NULL;
++	}
+ 
+ 	/* sml_endが呼ばれるのはユーザースレッドが終了するときか，
+ 	 * コールバック関数からのCへのリターンである．
+@@ -1428,7 +1454,7 @@
+ }
+ 
+ unsigned long
+-sml_wait_gc(void *frame_pointer)
++sml_wait_gc(void *frame_pointer, void *code)
+ {
+ 	struct sml_worker *worker = worker_tlv_get(current_worker);
+ 	struct sml_user *user = worker->current_user;
+@@ -1436,8 +1462,10 @@
+ 	assert(IS_ACTIVE(load_relaxed(&worker->state)));
+ 
+ 	void *orig = user->stack->top;
+-	if (!orig)
++	if (!orig) {
++		user->top_codes[user->depth - 1] = code;
+ 		user->stack->top = frame_pointer;
++	}
+ 
+ 	unsigned long gc = sml_gc(1);
+ 
+@@ -1446,7 +1474,7 @@
+ 
+ 	/* GCカウントがgc以上になるまで（少なくとも1回のGCが終わるまで）待つ */
+ 	while (load_relaxed(&gc_count) < gc)
+-		sml_check_internal(frame_pointer);
++		sml_check_internal(frame_pointer, code);
+ 
+ 	return gc;
+ }
+@@ -1791,6 +1819,7 @@
+ 
+ struct check_hook_cleanup_arg {
+ 	void *fp, *orig, **top;
++	void *code;
+ };
+ 
+ static void
+@@ -1803,7 +1832,7 @@
+ }
+ 
+ void
+-sml_check_internal(void *frame_pointer)
++sml_check_internal(void *frame_pointer, void *code)
+ {
+ 	struct sml_worker *worker = worker_tlv_get(current_worker);
+ 	struct sml_user *user;
+@@ -1832,8 +1861,10 @@
+ 		 * 可能性がある．worker_sync2はスタック範囲が閉じられている
+ 		 * ことを要求する．*/
+ 		orig = user->stack->top;
+-		if (!orig)
++		if (!orig) {
++			user->top_codes[user->depth - 1] = code;
+ 			user->stack->top = frame_pointer;
++		}
+ 		worker_sync1(worker, 1);
+ 		if (!orig)
+ 			user->stack->top = orig;
+@@ -1850,8 +1881,10 @@
+ 		 * 列挙ができないので，もし閉じられていないならばここで
+ 		 * 一時的に閉じる．*/
+ 		orig = user->stack->top;
+-		if (!orig)
++		if (!orig) {
++			user->top_codes[user->depth - 1] = code;
+ 			user->stack->top = frame_pointer;
++		}
+ 		worker_sync2(worker, 1);
+ 		if (!orig)
+ 			user->stack->top = orig;
+@@ -1894,8 +1927,9 @@
+ 		a.top = &user->stack->top;
+ 		a.orig = *a.top;
+ 		a.fp = a.orig ? a.orig : frame_pointer;
++		a.code = a.orig ? user->top_codes[user->depth - 1] : code;
+ 		DEBUG(user->stack->top = NULL);
+-		sml_leave_internal(a.fp);
++		sml_leave_internal(a.fp, a.code);
+ 		sml_call_with_cleanup(hook, check_hook_cleanup, &a);
+ 	}
+ }
+@@ -1905,15 +1939,15 @@
+ {
+ 	assert(worker_tlv_get(current_worker)->current_user->stack->top
+ 	       == NULL);
+-	sml_check_internal(CALLER_FRAME_END_ADDRESS());
++	sml_check_internal(CALLER_FRAME_END_ADDRESS(), CALLER_CODE_ADDRESS());
+ }
+ 
+ static void *
+-frame_enum_ptr(void *frame_end, void (*trace)(void **, void *), void *data)
++frame_enum_ptr(void *frame_end, void **codeaddr,
++	       void (*trace)(void **, void *), void *data)
+ {
+-	void *codeaddr = FRAME_CODE_ADDRESS(frame_end);
+ 	void *frame_begin, **slot;
+-	const struct sml_frame_layout *layout = sml_lookup_frametable(codeaddr);
++	const struct sml_frame_layout *layout = sml_lookup_frametable(*codeaddr);
+ 	uint16_t num_roots, i;
+ 
+ 	/* assume that the stack grows downwards. */
+@@ -1926,6 +1960,7 @@
+ 			trace(slot, data);
+ 	}
+ 
++	*codeaddr = FRAME_RETURN_ADDRESS(frame_begin, layout);
+ 	return NEXT_FRAME(frame_begin);
+ }
+ 
+@@ -1933,8 +1968,9 @@
+ sml_stack_enum_ptr(struct sml_user *user,
+ 		   void (*trace)(void **, void *), void *data)
+ {
+-	void *fp, *next;
++	void *fp, *next, *codeaddr;
+ 	struct frame_stack_range *range;
++	unsigned int depth = user->depth;
+ 
+ 	/* userはBUSY_STATEがセット（ロックが保持）されており，かつ
+ 	 * user->stackはNULLではないはずである（user->stackがNULLに
+@@ -1951,8 +1987,10 @@
+ 		assert(range->top != NULL && range->bottom != NULL);
+ 		/* スタック範囲には必ず1つのフレームが含まれる */
+ 		fp = range->top;
++		assert(depth > 0);
++		codeaddr = TOP_FRAME_CODE_ADDRESS(fp, user->top_codes[--depth]);
+ 		for (;;) {
+-			next = frame_enum_ptr(fp, trace, data);
++			next = frame_enum_ptr(fp, &codeaddr, trace, data);
+ 			if (fp == range->bottom)
+ 				break;
+ 			fp = next;
+--- a/src/runtime/heap_concurrent.c
++++ b/src/runtime/heap_concurrent.c
+@@ -1766,14 +1766,14 @@
+ }
+ 
+ static NOINLINE void *
+-find_segment(struct alloc_ptr *ptr, void *frame_pointer)
++find_segment(struct alloc_ptr *ptr, void *frame_pointer, void *code)
+ {
+ 	unsigned int subheap_index;
+ 	struct sml_alloc *alloc;
+ 	void *obj;
+ 
+ 	if (load_relaxed(&sml_check_flag))
+-		sml_check_internal(frame_pointer);
++		sml_check_internal(frame_pointer, code);
+ 
+ 	/* calculate subheap_index from ptr instead of taking it as an
+ 	 * argument.  This is an optimization that minimizes the number of
+@@ -1796,13 +1796,13 @@
+ 	sml_timer_now(t1);
+ #endif
+ 
+-	sml_wait_gc(frame_pointer);
++	sml_wait_gc(frame_pointer, code);
+ 	obj = try_find_segment(alloc, subheap_index, sml_current_phase());
+ 	if (obj)
+ 		goto wait_gc_finished;
+ 
+ 	// ToDo
+-	sml_wait_gc(frame_pointer);
++	sml_wait_gc(frame_pointer, code);
+ 	obj = try_find_segment(alloc, subheap_index, sml_current_phase());
+ 	if (obj)
+ 		goto wait_gc_finished;
+@@ -1936,7 +1936,7 @@
+ 	obj = find_bitmap(ptr);
+ 	if (obj) goto alloced;
+ 
+-	obj = find_segment(ptr, CALLER_FRAME_END_ADDRESS());
++	obj = find_segment(ptr, CALLER_FRAME_END_ADDRESS(), CALLER_CODE_ADDRESS());
+ 
+ alloced:
+ 	assert(check_filled(OBJ_BEGIN(obj), 0x55, objsize));

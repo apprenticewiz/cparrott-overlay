@@ -47,7 +47,7 @@ BDEPEND="
 "
 
 PATCHES=(
-	"${FILESDIR}"/${PN}-1.10.1-riscv64.patch
+	"${FILESDIR}"/${P}-riscv64.patch
 )
 
 src_compile() {

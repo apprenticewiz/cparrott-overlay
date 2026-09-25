@@ -10,7 +10,7 @@ if [[ ${PV} == "9999" ]]; then
 	S="${WORKDIR}/${P}"
 else
 	SRC_URI="http://moarvm.org/releases/${MY_PN}-${PV}.tar.gz"
-	KEYWORDS="~amd64 ~x86"
+	KEYWORDS="~amd64 ~arm64 ~x86"
 	S="${WORKDIR}/${MY_PN}-${PV}"
 fi
 

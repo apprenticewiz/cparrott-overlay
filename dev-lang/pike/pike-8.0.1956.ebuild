@@ -12,7 +12,7 @@ S="${WORKDIR}/Pike-v${PV}"
 
 LICENSE="GPL-2 LGPL-2.1 MPL-1.1"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 IUSE="fftw fuse glut gtk mysql odbc postgres sane sdl"
 
 # AUR pike 8.0.1956-2: gmp/zlib/nettle/pcre always; optional modules are

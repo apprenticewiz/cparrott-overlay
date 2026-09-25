@@ -3,7 +3,7 @@
 
 EAPI=8
 
-inherit flag-o-matic multiprocessing toolchain-funcs
+inherit flag-o-matic gnuconfig multiprocessing toolchain-funcs
 
 DESCRIPTION="Full-featured implementation of Smalltalk and its programming environment"
 HOMEPAGE="https://squeak.org/ http://squeakvm.org/unix/"
@@ -12,7 +12,7 @@ S="${WORKDIR}/Squeak-${PV}-src"
 
 LICENSE="Apache-2.0 MIT"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 
 RDEPEND="
 	dev-libs/glib:2
@@ -44,6 +44,13 @@ BDEPEND="
 PATCHES=(
 	"${FILESDIR}/${P}-modern-toolchain.patch"
 )
+
+src_prepare() {
+	default
+	# unix/cmake/configure derives the host from a 2002 config.guess,
+	# which does not know aarch64 and leaves VM_HOST empty.
+	gnuconfig_update
+}
 
 src_configure() {
 	# The 2012-generated VM sources rely on pre-C99 declarations and pointer

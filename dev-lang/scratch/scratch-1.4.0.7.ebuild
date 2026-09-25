@@ -14,7 +14,7 @@ S="${WORKDIR}/${P}.src"
 
 LICENSE="CC-BY-SA-3.0 GPL-2 MIT"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 
 RDEPEND="
 	dev-lang/squeak-vm

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>chris@parrotts.net</email>
+		<name>Chris Parrott</name>
+	</maintainer>
+	<use>
+		<flag name="contrib">Build additional contrib components</flag>
+		<flag name="fortran">Build the FortranProject plugin</flag>
+	</use>
+	<upstream>
+		<remote-id type="sourceforge">codeblocks</remote-id>
+	</upstream>
+</pkgmetadata>

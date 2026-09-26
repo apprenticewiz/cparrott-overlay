@@ -7,5 +7,6 @@ dev-lang
 dev-libs
 dev-lisp
 dev-scheme
+dev-util
 media-fonts
 virtual

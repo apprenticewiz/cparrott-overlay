@@ -188,6 +188,17 @@ src_configure() {
 	# We can do this because we know we're compiling with Clang specifically.
 	export LDFLAGS="$(clang-ldflags)"
 
+	# With the AArch64 backend enabled, the embedded stdlib is also built for
+	# `arm64e` targets, which require pointer authentication. The build applies
+	# `CFLAGS`/`CXXFLAGS` to every target, and an `-mcpu`/`-march` for a core
+	# without pointer authentication (e.g. Cortex-A76) makes LLVM abort with
+	# "arm64e LR authentication requires ptrauth". Keep only the tuning.
+	if use arm64; then
+		local cpu="$(get-flag mcpu)"
+		filter-flags '-mcpu=*' '-march=*'
+		[[ -n "${cpu}" ]] && append-flags "-mtune=${cpu%%+*}"
+	fi
+
 	# Extend the 'gentoo' build preset with user-specified flags and flags for
 	# libc++ systems.
 	cp "${FILESDIR}/${PF}/gentoo.ini" "${SWIFT_BUILD_PRESETS_INI_PATH}"

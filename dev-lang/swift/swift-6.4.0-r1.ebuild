@@ -177,6 +177,16 @@ src_configure() {
 	CXX="$(type -P clang++)"
 	LD="$(type -P ld.lld)"
 
+	# The Swift runtime finds protocol conformances and type metadata records
+	# by scanning sections bounded by `__start_`/`__stop_` symbols. The Swift
+	# parts of the compiler are built by the bootstrap toolchain, and Swift
+	# 5.10 does not mark those sections SHF_GNU_RETAIN. LLDB links with
+	# `--gc-sections`, and unlike GNU ld, lld does not let `__start_`/`__stop_`
+	# references keep sections alive: liblldb lost all of its records, and the
+	# REPL crashed instantiating `Set<SIL.Function>`. Swift's own CMake passes
+	# the same flag to its host tools when linking with lld.
+	append-ldflags -Wl,-z,nostart-stop-gc
+
 	# Swift builds with CMake, which picks up `LDFLAGS` from the environment and
 	# populates `CMAKE_EXE_LINKER_FLAGS` with them. `LDFLAGS` are typically
 	# given as GCC-style flags (`-Wlinker,foo`), which Clang understands;

@@ -18,7 +18,7 @@ S="${WORKDIR}/fbc-${PV}"
 
 LICENSE="GPL-2+ LGPL-2.1+"
 SLOT="0"
-KEYWORDS="~amd64 ~arm64 ~riscv"
+KEYWORDS="~amd64 ~arm64 ~loong ~riscv"
 
 # Arch runtime: ncurses. Arch makedepends: freebasic, gpm, libxpm, libxrandr, mesa.
 # Those extra libs are linked into user programs via libfb/libfbgfx, so they
@@ -48,6 +48,7 @@ BDEPEND="
 
 PATCHES=(
 	"${FILESDIR}"/${P}-riscv64.patch
+	"${FILESDIR}"/${P}-loongarch64.patch
 )
 
 src_compile() {

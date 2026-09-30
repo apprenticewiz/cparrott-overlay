@@ -1,0 +1,309 @@
+diff -Naur a/makefile b/makefile
+--- a/makefile	2026-09-30 16:25:28.734309511 -0700
++++ b/makefile	2026-09-30 16:26:22.303971871 -0700
+@@ -446,7 +446,7 @@
+   #    lib/freebasic/<fbtarget>/
+   libdirname := lib
+   ifdef ENABLE_LIB64
+-    ifneq ($(filter x86_64 aarch64 riscv64,$(TARGET_ARCH)),)
++    ifneq ($(filter x86_64 aarch64 riscv64 loongarch64,$(TARGET_ARCH)),)
+       libdirname := lib64
+     endif
+   endif
+@@ -1353,6 +1353,7 @@
+ 	mkdir -p bootstrap/linux-arm
+ 	mkdir -p bootstrap/linux-aarch64
+ 	mkdir -p bootstrap/linux-riscv64
++	mkdir -p bootstrap/linux-loongarch64
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target dos                 && mv src/compiler/*.asm bootstrap/dos
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target freebsd-x86         && mv src/compiler/*.asm bootstrap/freebsd-x86
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target freebsd-x86_64      && mv src/compiler/*.c   bootstrap/freebsd-x86_64
+@@ -1369,6 +1370,7 @@
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target linux-arm           && mv src/compiler/*.c   bootstrap/linux-arm
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target linux-aarch64       && mv src/compiler/*.c   bootstrap/linux-aarch64
+ 	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target linux-riscv64       && mv src/compiler/*.c   bootstrap/linux-riscv64
++	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v $(BOOTFBCFLAGS) -target linux-loongarch64   && mv src/compiler/*.c   bootstrap/linux-loongarch64
+ 
+ 	# Ensure to have LFs regardless of host system (LFs will probably work
+ 	# on DOS/Win32, but CRLFs could cause issues on Linux)
+@@ -1388,6 +1390,7 @@
+ 	dos2unix bootstrap/linux-arm/*
+ 	dos2unix bootstrap/linux-aarch64/*
+ 	dos2unix bootstrap/linux-riscv64/*
++	dos2unix bootstrap/linux-loongarch64/*
+ 
+ 	# Package FB sources (similar to our "gitdist" command), and add the bootstrap/ directory
+ 	# Making a .tar.xz should be good enough for now.
+diff -Naur a/src/compiler/fb.bas b/src/compiler/fb.bas
+--- a/src/compiler/fb.bas	2026-09-30 16:25:28.734643969 -0700
++++ b/src/compiler/fb.bas	2026-09-30 16:26:22.304469982 -0700
+@@ -241,7 +241,8 @@
+ 	(@"powerpc64"  , FB_DEFAULT_CPUTYPE_PPC64  ), _
+ 	(@"powerpc64le", FB_DEFAULT_CPUTYPE_PPC64LE), _
+ 	(@"asmjs"      , FB_DEFAULT_CPUTYPE_ASMJS  ), _
+-	(@"riscv64"    , FB_DEFAULT_CPUTYPE_RISCV64)  _
++	(@"riscv64"     , FB_DEFAULT_CPUTYPE_RISCV64), _
++	(@"loongarch64" , FB_DEFAULT_CPUTYPE_LOONGARCH64)  _
+ }
+ 
+ type FBCPUTYPEINFO
+@@ -277,7 +278,8 @@
+ 	( NULL       , @"powerpc64"    , FB_CPUFAMILY_PPC64  , 64, TRUE  ), _ '' FB_CPUTYPE_PPC64
+ 	( NULL       , @"powerpc64le"  , FB_CPUFAMILY_PPC64LE, 64, FALSE ), _ '' FB_CPUTYPE_PPC64LE
+ 	( NULL       , @"asmjs"        , FB_CPUFAMILY_ASMJS  , 32, FALSE ), _ '' FB_CPUTYPE_ASMJS
+-	( @"rv64gc"  , @"riscv64"      , FB_CPUFAMILY_RISCV64, 64, FALSE )  _ '' FB_CPUTYPE_RISCV64
++	( @"rv64gc"  , @"riscv64"      , FB_CPUFAMILY_RISCV64    , 64, FALSE ), _ '' FB_CPUTYPE_RISCV64
++	( NULL       , @"loongarch64"  , FB_CPUFAMILY_LOONGARCH64, 64, FALSE )  _ '' FB_CPUTYPE_LOONGARCH64
+ }
+ 
+ ''::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+@@ -924,6 +926,7 @@
+ 	''    linux-arm
+ 	''    linux-aarch64
+ 	''    linux-riscv64
++	''    linux-loongarch64
+ 	''    freebsd-x86
+ 	''    freebsd-x86_64
+ 	''    freebsd-powerpc | freebsd-ppc
+@@ -1744,7 +1747,7 @@
+ 		case FB_CPUFAMILY_PPC64, FB_CPUFAMILY_PPC64LE
+ 			typedef = FB_CVA_LIST_BUILTIN_POINTER
+ 
+-		case FB_CPUFAMILY_RISCV64
++		case FB_CPUFAMILY_RISCV64, FB_CPUFAMILY_LOONGARCH64
+ 			typedef = FB_CVA_LIST_BUILTIN_POINTER
+ 
+ 		case else
+diff -Naur a/src/compiler/fb.bi b/src/compiler/fb.bi
+--- a/src/compiler/fb.bi	2026-09-30 16:25:28.734912989 -0700
++++ b/src/compiler/fb.bi	2026-09-30 16:26:22.304831884 -0700
+@@ -173,6 +173,7 @@
+ 	FB_CPUTYPE_PPC64LE
+ 	FB_CPUTYPE_ASMJS
+ 	FB_CPUTYPE_RISCV64
++	FB_CPUTYPE_LOONGARCH64
+ 	FB_CPUTYPE__COUNT
+ end enum
+ 
+@@ -186,6 +187,7 @@
+ 	FB_CPUFAMILY_PPC64LE
+ 	FB_CPUFAMILY_ASMJS
+ 	FB_CPUFAMILY_RISCV64
++	FB_CPUFAMILY_LOONGARCH64
+ 	FB_CPUFAMILY__COUNT
+ end enum
+ 
+@@ -440,6 +442,7 @@
+ const FB_DEFAULT_CPUTYPE_PPC64LE = FB_CPUTYPE_PPC64LE
+ const FB_DEFAULT_CPUTYPE_ASMJS   = FB_CPUTYPE_ASMJS
+ const FB_DEFAULT_CPUTYPE_RISCV64 = FB_CPUTYPE_RISCV64
++const FB_DEFAULT_CPUTYPE_LOONGARCH64 = FB_CPUTYPE_LOONGARCH64
+ 
+ '' default 32 and 64 bit CPU's (based on defaults above)
+ #ifdef __FB_ARM__
+@@ -456,6 +459,10 @@
+ 	'' no 32-bit RISC-V target yet
+ 	const FB_DEFAULT_CPUTYPE32 = FB_DEFAULT_CPUTYPE_RISCV64
+ 	const FB_DEFAULT_CPUTYPE64 = FB_DEFAULT_CPUTYPE_RISCV64
++#elseif defined(__FB_LOONGARCH__)
++	'' no 32-bit LoongArch target yet
++	const FB_DEFAULT_CPUTYPE32 = FB_DEFAULT_CPUTYPE_LOONGARCH64
++	const FB_DEFAULT_CPUTYPE64 = FB_DEFAULT_CPUTYPE_LOONGARCH64
+ #elseif defined(__FB_X86__)
+ 	const FB_DEFAULT_CPUTYPE32 = FB_DEFAULT_CPUTYPE_X86
+ 	const FB_DEFAULT_CPUTYPE64 = FB_DEFAULT_CPUTYPE_X86_64
+diff -Naur a/src/compiler/fbc.bas b/src/compiler/fbc.bas
+--- a/src/compiler/fbc.bas	2026-09-30 16:25:28.735375299 -0700
++++ b/src/compiler/fbc.bas	2026-09-30 16:26:22.305914235 -0700
+@@ -870,6 +870,9 @@
+ 					ldcline += " -dynamic-linker /lib/ld-linux-aarch64.so.1"
+ 				case FB_CPUFAMILY_RISCV64
+ 					ldcline += " -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1"
++				case FB_CPUFAMILY_LOONGARCH64
++					'' LoongArch LP64D ABI interpreter (psABI), not /lib
++					ldcline += " -dynamic-linker /lib64/ld-linux-loongarch-lp64d.so.1"
+ 				end select
+ 			case FB_COMPTARGET_NETBSD
+ 				ldcline += " -dynamic-linker /usr/libexec/ld.elf_so"
+@@ -1183,7 +1186,8 @@
+ 			dim as long cpufamily = fbGetCpuFamily( )
+ 			if cpufamily = FB_CPUFAMILY_X86_64 OrElse cpufamily = FB_CPUFAMILY_AARCH64 OrElse _
+ 				cpuFamily = FB_CPUFAMILY_PPC64 OrElse cpufamily = FB_CPUFAMILY_PPC64LE OrElse _
+-				cpufamily = FB_CPUFAMILY_RISCV64 Then
++				cpufamily = FB_CPUFAMILY_RISCV64 OrElse _
++				cpufamily = FB_CPUFAMILY_LOONGARCH64 Then
+ 				ldcline += " --eh-frame-hdr"
+ 			end if
+ 		end if
+@@ -1524,7 +1528,8 @@
+ 	(@"powerpc64"  , FB_DEFAULT_CPUTYPE_PPC64  ),  _
+ 	(@"ppc64le  "  , FB_DEFAULT_CPUTYPE_PPC64LE), _
+ 	(@"powerpc64le", FB_DEFAULT_CPUTYPE_PPC64LE), _
+-	(@"riscv64"    , FB_DEFAULT_CPUTYPE_RISCV64)  _
++	(@"riscv64"     , FB_DEFAULT_CPUTYPE_RISCV64), _
++	(@"loongarch64" , FB_DEFAULT_CPUTYPE_LOONGARCH64)  _
+ }
+ 
+ '' Identify OS (FB_COMPTARGET_*) and architecture (FB_CPUTYPE_*) in a GNU
+@@ -3421,6 +3426,10 @@
+ 		case FB_CPUFAMILY_RISCV64
+ 			'' gcc selects 32/64-bit RISC-V via -march/-mabi, it has no -m64
+ 			ism64Target = True
++		case FB_CPUFAMILY_LOONGARCH64
++			'' gcc selects the LP64 ABI with -mabi, it has no -m64
++			ln += "-mabi=lp64d "
++			ism64Target = True
+ 		end select
+ 
+ 		if( fbGetOption( FB_COMPOPT_TARGET ) <> FB_COMPTARGET_JS ) then
+@@ -3583,6 +3592,9 @@
+ 			ln += "-mcpu=powerpc64le "
+ 		case FB_CPUFAMILY_RISCV64
+ 			ln += "-march=riscv64 -mattr=+m,+a,+f,+d,+c "
++		case FB_CPUFAMILY_LOONGARCH64
++			'' +d selects the LP64D hard-float ABI in llc
++			ln += "-march=loongarch64 -mattr=+d "
+ 		end select
+ 
+ 		if( fbGetOption( FB_COMPOPT_PIC ) ) then
+diff -Naur a/src/compiler/objinfo.bas b/src/compiler/objinfo.bas
+--- a/src/compiler/objinfo.bas	2026-09-30 16:25:28.735898088 -0700
++++ b/src/compiler/objinfo.bas	2026-09-30 16:26:22.306523184 -0700
+@@ -86,7 +86,7 @@
+ ''    reads the currently loaded object file,
+ ''    using either the COFF (Win32, DOS), ELF32/64 (Linux, *BSD) or
+ ''    Mach-O (Darwin) format.
+-''    ELF32 (linux-arm) or ELF64 (linux-aarch64, linux-riscv64)
++''    ELF32 (linux-arm) or ELF64 (linux-aarch64, linux-riscv64, linux-loongarch64)
+ ''    looks for the .fbctinf section,
+ ''    and if found, parses its content, and tells the frontend about the
+ ''    found libraries etc. by using the callbacks.
+@@ -193,6 +193,7 @@
+ const EM_PPC = &h14
+ const EM_PPC64 = &h15
+ const EM_RISCV = &hf3
++const EM_LOONGARCH = &h102
+ 
+ '' ELF section headers
+ type ELF32_SH field = 1
+@@ -894,6 +895,9 @@
+ 		case FB_CPUFAMILY_RISCV64
+ 			INFO( "reading riscv64 ELF: " + parser.filename )
+ 			hLoadFbctinfFromELF64_H( EM_RISCV )
++		case FB_CPUFAMILY_LOONGARCH64
++			INFO( "reading loongarch64 ELF: " + parser.filename )
++			hLoadFbctinfFromELF64_H( EM_LOONGARCH )
+ 		end select
+ 	elseif( fbTargetSupportsMachO( ) ) then
+ 		INFO( "reading Mach-O: " + parser.filename )
+diff -Naur a/src/compiler/symb-define.bas b/src/compiler/symb-define.bas
+--- a/src/compiler/symb-define.bas	2026-09-30 16:25:28.736156427 -0700
++++ b/src/compiler/symb-define.bas	2026-09-30 16:26:22.306958761 -0700
+@@ -1363,6 +1363,8 @@
+ 		symbAddDefine( @"__FB_PPC__", NULL, 0 )
+ 	case FB_CPUFAMILY_RISCV64
+ 		symbAddDefine( @"__FB_RISCV__", NULL, 0 )
++	case FB_CPUFAMILY_LOONGARCH64
++		symbAddDefine( @"__FB_LOONGARCH__", NULL, 0 )
+ 	end select
+ 
+ 	if( fbIsHostBigEndian( ) ) then
+diff -Naur a/src/rtlib/fb_config.h b/src/rtlib/fb_config.h
+--- a/src/rtlib/fb_config.h	2026-09-30 16:25:28.736372312 -0700
++++ b/src/rtlib/fb_config.h	2026-09-30 16:26:22.307263301 -0700
+@@ -65,6 +65,8 @@
+ 	#define HOST_64BIT
+ #elif defined __riscv && __riscv_xlen == 64
+ 	#define HOST_64BIT
++#elif defined __loongarch64
++	#define HOST_64BIT
+ #endif
+ 
+ #ifdef HOST_MINGW
+diff -Naur a/tests/fbcprint/makefile b/tests/fbcprint/makefile
+--- a/tests/fbcprint/makefile	2026-09-30 16:25:28.736466477 -0700
++++ b/tests/fbcprint/makefile	2026-09-30 16:26:22.307456561 -0700
+@@ -23,6 +23,7 @@
+ 	$(call test,-print target -target freebsd-x86_64)
+ 	$(call test,-print target -target linux-aarch64)
+ 	$(call test,-print target -target linux-riscv64)
++	$(call test,-print target -target linux-loongarch64)
+ 	$(call test,-print target -target linux-arm)
+ 	$(call test,-print target -target linux-x86)
+ 	$(call test,-print target -target linux-x86_64)
+diff -Naur a/tests/fbcprint/results.txt b/tests/fbcprint/results.txt
+--- a/tests/fbcprint/results.txt	2026-09-30 16:25:28.736548920 -0700
++++ b/tests/fbcprint/results.txt	2026-09-30 16:26:22.307630935 -0700
+@@ -13,6 +13,7 @@
+ -print target -target freebsd-x86_64 = freebsd-x86_64
+ -print target -target linux-aarch64 = linux-aarch64
+ -print target -target linux-riscv64 = linux-riscv64
++-print target -target linux-loongarch64 = linux-loongarch64
+ -print target -target linux-arm = linux-arm
+ -print target -target linux-x86 = linux-x86
+ -print target -target linux-x86_64 = linux-x86_64
+diff -Naur a/tests/numbers/infnan.bas b/tests/numbers/infnan.bas
+--- a/tests/numbers/infnan.bas	2026-09-30 16:25:28.736657834 -0700
++++ b/tests/numbers/infnan.bas	2026-09-30 16:26:22.307856739 -0700
+@@ -17,7 +17,7 @@
+ 			'' and x86 and ARM / RISC-V differ in its selection.
+ 			'' Appears to be ditto for emscripten
+ 			'' Little-endian assumption casting double ptr to ulongint ptr
+-			#if defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_JS__ )
++			#if defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_LOONGARCH__ ) or defined( __FB_JS__ )
+ 				#if( (x = NEGNAND) or (x = POSNAND) )
+ 					CU_ASSERT( ((*cptr( ulongint ptr, @d )) and SGNMASK) = POSNAND )
+ 				#else
+@@ -125,7 +125,7 @@
+ 			'' and x86 and ARM / RISC-V differ in its selection.
+ 			'' Appears to be ditto for emscripten
+ 			'' Little-endian assumption casting double ptr to ulongint ptr
+-			#if defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_JS__ )
++			#if defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_LOONGARCH__ ) or defined( __FB_JS__ )
+ 				#if( (x = NEGNANF) or (x = POSNANF) )
+ 					CU_ASSERT( ((*cptr( ulong ptr, @f )) and SGNMASK) = POSNANF )
+ 				#else
+diff -Naur a/tests/string/print_using.bas b/tests/string/print_using.bas
+--- a/tests/string/print_using.bas	2026-09-30 16:25:28.736775706 -0700
++++ b/tests/string/print_using.bas	2026-09-30 16:26:22.308194775 -0700
+@@ -394,14 +394,14 @@
+ 		test_sng( fmt, -inf, "-1.#INF" )
+ 
+ 		test_sng( fmt,  nan, "+1.#NAN" )
+-		'' riscv: single->double conversion (fcvt.d.s) yields the canonical
++		'' riscv / loongarch: float->double conversion yields the canonical
+ 		'' (positive) NaN, so the sign of -nan is lost
+-		#if not defined( __FB_RISCV__ ) or ( ENABLE_CHECK_BUGS <> 0 )
++		#if not ( defined( __FB_RISCV__ ) or defined( __FB_LOONGARCH__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 		test_sng( fmt, -nan, "-1.#NAN" )
+ 		#endif
+ 
+-		'' arm / riscv targets only return NAN instead of IND? and different signs??
+-		#if not ( defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
++		'' arm / riscv / loongarch targets only return NAN instead of IND? and different signs??
++		#if not ( defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_LOONGARCH__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 
+ 		test_sng( fmt, ind, "-1.#IND" )
+ 
+diff -Naur a/tests/wstring/print_using.bas b/tests/wstring/print_using.bas
+--- a/tests/wstring/print_using.bas	2026-09-30 16:25:28.736957765 -0700
++++ b/tests/wstring/print_using.bas	2026-09-30 16:26:22.308511889 -0700
+@@ -396,14 +396,14 @@
+ 		test_sng( fmt, -inf, "-1.#INF" )
+ 
+ 		test_sng( fmt,  nan, "+1.#NAN" )
+-		'' riscv: single->double conversion (fcvt.d.s) yields the canonical
++		'' riscv / loongarch: float->double conversion yields the canonical
+ 		'' (positive) NaN, so the sign of -nan is lost
+-		#if not defined( __FB_RISCV__ ) or ( ENABLE_CHECK_BUGS <> 0 )
++		#if not ( defined( __FB_RISCV__ ) or defined( __FB_LOONGARCH__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 		test_sng( fmt, -nan, "-1.#NAN" )
+ 		#endif
+ 
+-		'' arm / riscv targets only return NAN instead of IND? and different signs??
+-		#if not ( defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
++		'' arm / riscv / loongarch targets only return NAN instead of IND? and different signs??
++		#if not ( defined( __FB_ARM__ ) or defined( __FB_RISCV__ ) or defined( __FB_LOONGARCH__ ) ) or ( ENABLE_CHECK_BUGS <> 0 )
+ 
+ 		test_sng( fmt, ind, "-1.#IND" )
+ 

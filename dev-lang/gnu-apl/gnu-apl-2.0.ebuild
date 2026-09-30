@@ -14,7 +14,7 @@ S="${WORKDIR}/apl-${PV}"
 
 LICENSE="GPL-3+"
 SLOT="0"
-KEYWORDS="~amd64 ~arm64 ~riscv"
+KEYWORDS="~amd64 ~arm64 ~loong ~riscv"
 IUSE="doc erlang fftw gsl gtk3 libapl +pcre2 +png postgresql python-module +sqlite3 static-libs X"
 
 REQUIRED_USE="

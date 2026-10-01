@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<longdescription lang="en">
+		NuGet packs for the .NET runtime. The 10.0.12 ebuild also fetches the
+		LoongArch64 packs from Loongson's NuGet feed.
+	</longdescription>
+	<upstream>
+		<remote-id type="github">dotnet/runtime</remote-id>
+	</upstream>
+</pkgmetadata>

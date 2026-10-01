@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<longdescription lang="en">
+		Source-built .NET SDK. The 10.0.112 ebuild also applies Loongson's
+		LoongArch64 port when building for ~loong.
+	</longdescription>
+	<upstream>
+		<bugs-to>https://github.com/dotnet/sdk/issues/</bugs-to>
+		<remote-id type="github">dotnet/dotnet</remote-id>
+	</upstream>
+</pkgmetadata>

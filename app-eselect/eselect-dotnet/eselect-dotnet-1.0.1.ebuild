@@ -9,7 +9,7 @@ SRC_URI="https://dev.gentoo.org/~xgqt/distfiles/mirrored/${P}.tar.bz2"
 
 LICENSE="GPL-2+"
 SLOT="0"
-KEYWORDS="amd64 arm arm64 ~loong"
+KEYWORDS="amd64 arm arm64 ~loong ~riscv"
 
 RDEPEND="app-admin/eselect"
 

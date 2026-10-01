@@ -61,7 +61,7 @@ S="${WORKDIR}"
 
 LICENSE="MIT"
 SLOT="${PV}/${PV}"
-KEYWORDS="~amd64 ~arm64 ~loong"
+KEYWORDS="~amd64 ~arm64 ~loong ~riscv"
 
 src_unpack() {
 	:

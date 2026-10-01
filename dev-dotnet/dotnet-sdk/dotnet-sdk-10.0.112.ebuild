@@ -9,10 +9,14 @@
 # (https://github.com/loongson/dotnet) and bootstraps from their 10.0.111 SDK
 # plus their previously source-built artifacts. amd64 and arm64 use upstream
 # tag v10.0.112 and Microsoft's centos.10-x64 artifact archive.
+# ~riscv uses the same upstream tag. Microsoft does not publish a riscv64 SDK
+# or artifact archive, so the bootstrap SDK comes from
+# https://github.com/filipnavara/dotnet-riscv and the previously source-built
+# artifacts come from AOSC's 10.0.111 riscv64 package.
 #
 # prep-source-build.sh on amd64/arm64 rewrites portable runtime packs and
 # contacts Azure Artifacts. Emerge those with FEATURES="-network-sandbox".
-# The loong path passes --no-bootstrap and stays on the staged archives.
+# The loong and riscv paths pass --no-bootstrap and stay on the staged archives.
 #
 # User variable: DOTNET_VERBOSITY — build log level (default: minimal).
 
@@ -47,15 +51,19 @@ SRC_URI="
 		https://github.com/loongson/dotnet/releases/download/v${BOOT_PV}-loongarch64/dotnet-sdk-${BOOT_PV}-linux-loongarch64.tar.gz
 		https://github.com/loongson/dotnet/releases/download/v${BOOT_PV}-loongarch64/Private.SourceBuilt.Artifacts.${PSB_VER}.linux-loongarch64.tar.gz
 	)
-	!loong? (
-		https://builds.dotnet.microsoft.com/dotnet/source-build/Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz
+	riscv? (
+		https://github.com/filipnavara/dotnet-riscv/releases/download/${BOOT_PV}/dotnet-sdk-${BOOT_PV}-linux-riscv64.tar.gz
+		https://repo.aosc.io/debs/pool/stable/main/d/dotnet-sdk-10.0-source-built-artifacts_${BOOT_PV}-0_riscv64.deb
 	)
+	!loong? ( !riscv? (
+		https://builds.dotnet.microsoft.com/dotnet/source-build/Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz
+	) )
 "
 S="${WORKDIR}/${P}"
 
 LICENSE="MIT"
 SLOT="${SDK_SLOT}/${RUNTIME_SLOT}"
-KEYWORDS="~amd64 ~arm64 ~loong"
+KEYWORDS="~amd64 ~arm64 ~loong ~riscv"
 
 # STRIP="llvm-strip" corrupts some executables when using the patchelf hack.
 # Be safe and restrict it for source-built too, bug https://bugs.gentoo.org/923430
@@ -70,11 +78,13 @@ EXTRA_NUGETS_DEPEND="
 	~dev-dotnet/dotnet-runtime-nugets-8.0.30
 	~dev-dotnet/dotnet-runtime-nugets-9.0.19
 "
-# net6/net7/net8/net9 targeting packs in the Gentoo tree have no loongarch RID
-# and are not keyworded ~loong. The 10.0.12 pack set in this overlay is.
+# net6/net7/net8/net9 targeting packs in the Gentoo tree have no loongarch
+# or riscv64 RID and are not keyworded for those arches. The 10.0.12 pack set
+# in this overlay is.
 PDEPEND="
 	${CURRENT_NUGETS_DEPEND}
-	!loong? ( ${EXTRA_NUGETS_DEPEND} )
+	amd64? ( ${EXTRA_NUGETS_DEPEND} )
+	arm64? ( ${EXTRA_NUGETS_DEPEND} )
 "
 RDEPEND="
 	app-arch/brotli
@@ -100,6 +110,7 @@ BDEPEND="
 	dev-libs/libxml2
 	dev-vcs/git
 	net-libs/nodejs
+	riscv? ( app-arch/zstd )
 	$(llvm_gen_dep '
 		llvm-core/clang:${LLVM_SLOT}
 		llvm-core/lld:${LLVM_SLOT}
@@ -181,7 +192,7 @@ pkg_setup() {
 
 	check_requirements_locale
 
-	if [[ "${MERGE_TYPE}" != binary ]] && ! use loong ; then
+	if [[ "${MERGE_TYPE}" != binary ]] && { use amd64 || use arm64 ; } ; then
 		if has network-sandbox ${FEATURES} ; then
 			einfo "amd64/arm64 prep restores portable runtime packs from Azure Artifacts."
 			einfo "If that step is blocked, re-emerge with FEATURES=\"-network-sandbox\"."
@@ -269,6 +280,8 @@ EOF
 		boot_rid="linux-arm64"
 	elif use loong ; then
 		boot_rid="linux-loongarch64"
+	elif use riscv ; then
+		boot_rid="linux-riscv64"
 	else
 		die "no bootstrap SDK for this architecture"
 	fi
@@ -278,10 +291,22 @@ EOF
 
 	if use loong ; then
 		psb="Private.SourceBuilt.Artifacts.${PSB_VER}.linux-loongarch64.tar.gz"
+		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
+	elif use riscv ; then
+		# AOSC ships the 10.0.111 linux-riscv64 artifact archive inside a deb.
+		local deb_tmp="${T}/riscv-psb" deb_data psb_found
+		mkdir -p "${deb_tmp}" || die
+		ar --output="${deb_tmp}" x "${DISTDIR}/dotnet-sdk-10.0-source-built-artifacts_${BOOT_PV}-0_riscv64.deb" || die
+		deb_data="$(find "${deb_tmp}" -maxdepth 1 -name 'data.tar.*' -print -quit)" || die
+		[[ -n "${deb_data}" ]] || die "AOSC artifact deb has no data tarball"
+		tar -I zstd -xf "${deb_data}" -C "${deb_tmp}" || die
+		psb_found="$(find "${deb_tmp}" -name 'Private.SourceBuilt.Artifacts.*.tar.gz' -print -quit)" || die
+		[[ -n "${psb_found}" ]] || die "AOSC artifact deb has no source-built archive"
+		cp "${psb_found}" "${archive_dir}/" || die
 	else
 		psb="Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz"
+		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
 	fi
-	cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
 
 	local -a prep_args=(
 		--no-sdk
@@ -289,9 +314,9 @@ EOF
 	)
 	if use arm64 ; then
 		prep_args+=( --bootstrap-rid linux-arm64 )
-	elif use loong ; then
-		# Loongson's archive is already the linux-loongarch64 source-built set.
-		# Azure feeds do not publish that RID.
+	elif use loong || use riscv ; then
+		# These archives are already the arch-specific source-built set.
+		# Azure feeds do not publish linux-loongarch64 or linux-riscv64.
 		prep_args+=( --no-bootstrap )
 	fi
 
@@ -331,6 +356,17 @@ src_compile() {
 		--clean-while-building
 		--with-system-libs "+brotli+icu+libunwind+rapidjson+zlib+"
 		--configuration "Release"
+	)
+	# Host detection would brand the output gentoo-<version>-riscv64.
+	# The bootstrap archives and the portable RID are linux-riscv64.
+	if use riscv ; then
+		buildopts+=(
+			--os linux
+			--rid linux-riscv64
+			--arch riscv64
+		)
+	fi
+	buildopts+=(
 
 		--
 		-maxCpuCount:"$(makeopts_jobs)"

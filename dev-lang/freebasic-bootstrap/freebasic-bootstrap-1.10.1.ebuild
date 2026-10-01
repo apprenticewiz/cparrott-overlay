@@ -19,10 +19,8 @@ RDEPEND="sys-libs/ncurses:="
 DEPEND="${RDEPEND}"
 
 PATCHES=(
-	# Adds the linux-riscv64 target and its pre-translated bootstrap/ tree.
-	"${FILESDIR}"/freebasic-${PV}-bootstrap-riscv64.patch
-	# Adds the linux-loongarch64 target and its pre-translated bootstrap/ tree.
-	"${FILESDIR}"/freebasic-${PV}-bootstrap-loongarch64.patch
+	# Adds linux-riscv64 and linux-loongarch64, including their bootstrap/ trees.
+	"${FILESDIR}"/freebasic-${PV}-bootstrap-riscv64-loongarch64.patch
 )
 
 # fbc with no ENABLE_PREFIX resolves its own prefix as $(dirname $(exepath))/..,

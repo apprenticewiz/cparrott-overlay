@@ -14,9 +14,12 @@
 # https://github.com/filipnavara/dotnet-riscv and the previously source-built
 # artifacts come from AOSC's 10.0.111 riscv64 package.
 #
-# prep-source-build.sh on amd64/arm64 rewrites portable runtime packs and
-# contacts Azure Artifacts. Emerge those with FEATURES="-network-sandbox".
-# The loong and riscv paths pass --no-bootstrap and stay on the staged archives.
+# prep-source-build.sh rewrites portable runtime packs only when it downloads
+# the artifact archive. Staging that archive from DISTDIR skips the rewrite,
+# so amd64/arm64 run it first and replace the centos RID packs with
+# runtime.linux-x64 / linux-arm64 packs from Azure Artifacts. Emerge those
+# with FEATURES="-network-sandbox". loong and riscv stay on the staged
+# archives; those feeds have no packs for those RIDs.
 #
 # User variable: DOTNET_VERBOSITY — build log level (default: minimal).
 
@@ -194,8 +197,8 @@ pkg_setup() {
 
 	if [[ "${MERGE_TYPE}" != binary ]] && { use amd64 || use arm64 ; } ; then
 		if has network-sandbox ${FEATURES} ; then
-			einfo "amd64/arm64 prep restores portable runtime packs from Azure Artifacts."
-			einfo "If that step is blocked, re-emerge with FEATURES=\"-network-sandbox\"."
+			einfo "amd64/arm64 src_prepare restores portable runtime packs from Azure Artifacts."
+			einfo "That step needs network. Re-emerge with FEATURES=\"-network-sandbox\"."
 		fi
 	fi
 }
@@ -308,17 +311,35 @@ EOF
 		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
 	fi
 
+	# Staging the tarball makes prep skip its download, and the portable-pack
+	# rewrite only runs inside that download branch. Do it here so binary
+	# removal unpacks runtime.${boot_rid} packages instead of centos.10-x64.
+	if use amd64 || use arm64 ; then
+		local boot_dir="${S}/artifacts/prep-bootstrap"
+		mkdir -p "${boot_dir}" "${S}/artifacts/log" || die
+		tar -xzf "${archive_dir}/Private.SourceBuilt.Artifacts."*.tar.gz \
+			-C "${boot_dir}" PackageVersions.props || die
+		cp "${S}/eng/bootstrap/buildBootstrapPreviouslySB.csproj" "${boot_dir}/" || die
+		cp "${S}/src/sdk/NuGet.config" "${boot_dir}/" || die
+
+		ebegin "Rewriting portable runtime packs for ${boot_rid}"
+		"${S}/.dotnet/dotnet" restore "${boot_dir}/buildBootstrapPreviouslySB.csproj" \
+			/bl:"${S}/artifacts/log/prep-bootstrap.binlog" \
+			/fileLoggerParameters:LogFile="${S}/artifacts/log/prep-bootstrap.log" \
+			/p:ArchiveDir="${archive_dir}/" \
+			/p:PortableTargetRid="${boot_rid}"
+		local bootstrap_rc=${?}
+		rm -rf "${boot_dir}" || die
+		eend ${bootstrap_rc} || die "portable runtime pack bootstrap failed; re-emerge with FEATURES=\"-network-sandbox\""
+	fi
+
 	local -a prep_args=(
 		--no-sdk
 		--no-prebuilts
+		# amd64/arm64 were rewritten above. loong/riscv archives are already
+		# the arch-specific set; Azure has no packs for those RIDs.
+		--no-bootstrap
 	)
-	if use arm64 ; then
-		prep_args+=( --bootstrap-rid linux-arm64 )
-	elif use loong || use riscv ; then
-		# These archives are already the arch-specific source-built set.
-		# Azure feeds do not publish linux-loongarch64 or linux-riscv64.
-		prep_args+=( --no-bootstrap )
-	fi
 
 	ebegin "Preparing the source-build tree"
 	bash ./prep-source-build.sh "${prep_args[@]}"

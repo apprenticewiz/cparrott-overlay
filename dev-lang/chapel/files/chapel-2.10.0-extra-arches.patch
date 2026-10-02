@@ -1,9 +1,11 @@
-Recognize loongarch64 in Chapel and its bundled qthreads.
+Build Chapel and its bundled qthreads on loongarch64 and riscv64.
 
 * chplenv classified loongarch64 as linux32.
 * LoongArch compilers select the CPU with -march=, not -mcpu=.
-* qthreads stopped at "Unsupported architecture"; with an arch id it
-  uses its generic atomics and the system context switch.
+* qthreads stopped at "Unsupported architecture" on loongarch64; with an
+  arch id it uses its generic atomics and the system context switch.
+* qthreads kept the -1 that sysconf() returns for an unknown cache line
+  size (seen on riscv64), which crashed qthread_initialize().
 
 --- a/util/chplenv/chpl_platform.py
 +++ b/util/chplenv/chpl_platform.py
@@ -49,3 +51,14 @@ Recognize loongarch64 in Chapel and its bundled qthreads.
  #else
  #error "Unsupported architecture"
  #endif
+--- a/third-party/qthread/qthread-src/src/cacheline.c
++++ b/third-party/qthread/qthread-src/src/cacheline.c
+@@ -367,7 +367,7 @@
+ int API_FUNC qthread_cacheline(void) {
+   if (cacheline_bytes == 0) {
+     figure_out_cacheline_size();
+-    if (cacheline_bytes == 0) { /* to cache errors in cacheline detection */
++    if (cacheline_bytes <= 0) { /* to cache errors in cacheline detection */
+       cacheline_bytes = 128;
+     }
+   }

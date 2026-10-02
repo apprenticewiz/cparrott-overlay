@@ -15,7 +15,7 @@ SRC_URI="https://github.com/chapel-lang/chapel/releases/download/${PV}/${P}.tar.
 
 LICENSE="Apache-2.0 BSD MIT"
 SLOT="0"
-KEYWORDS="~amd64 ~arm64 ~loong"
+KEYWORDS="~amd64 ~arm64 ~loong ~riscv"
 IUSE="test"
 REQUIRED_USE="${PYTHON_REQUIRED_USE}"
 RESTRICT="!test? ( test )"
@@ -47,7 +47,7 @@ BDEPEND="
 CHECKREQS_MEMORY="2G"
 
 PATCHES=(
-	"${FILESDIR}/${P}-loongarch64.patch"
+	"${FILESDIR}/${P}-extra-arches.patch"
 )
 
 pkg_pretend() {

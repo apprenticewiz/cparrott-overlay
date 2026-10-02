@@ -13,12 +13,16 @@
 # or artifact archive, so the bootstrap SDK comes from
 # https://github.com/filipnavara/dotnet-riscv and the previously source-built
 # artifacts come from AOSC's 10.0.111 riscv64 package.
+# ~ppc64 is little-endian only and also uses the upstream tag. The bootstrap
+# SDK and artifact archive come from IBM's 10.0.111 linux-ppc64le release
+# (https://github.com/IBM/dotnet-s390x). CoreCLR has no ppc64le port, so the
+# SDK is built on the Mono runtime.
 #
 # prep-source-build.sh rewrites portable runtime packs only when it downloads
 # the artifact archive. Staging that archive from DISTDIR skips the rewrite,
 # so amd64/arm64 run it first and replace the centos RID packs with
 # runtime.linux-x64 / linux-arm64 packs from Azure Artifacts. Emerge those
-# with FEATURES="-network-sandbox". loong and riscv stay on the staged
+# with FEATURES="-network-sandbox". loong, ppc64 and riscv stay on the staged
 # archives; those feeds have no packs for those RIDs.
 #
 # User variable: DOTNET_VERBOSITY — build log level (default: minimal).
@@ -35,7 +39,7 @@ RUNTIME_SLOT="${SDK_SLOT}.12"
 LLVM_COMPAT=( 20 )
 PYTHON_COMPAT=( python3_{13..14} )
 
-inherit check-reqs flag-o-matic llvm-r2 multiprocessing python-any-r1
+inherit check-reqs flag-o-matic llvm-r2 multiprocessing python-any-r1 toolchain-funcs
 
 DESCRIPTION=".NET is a free, cross-platform, open-source developer platform"
 HOMEPAGE="https://dotnet.microsoft.com/
@@ -46,27 +50,30 @@ SRC_URI="
 		-> ${P}.tar.gz
 	amd64? (
 		https://builds.dotnet.microsoft.com/dotnet/Sdk/${BOOT_PV}/dotnet-sdk-${BOOT_PV}-linux-x64.tar.gz
+		https://builds.dotnet.microsoft.com/dotnet/source-build/Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz
 	)
 	arm64? (
 		https://builds.dotnet.microsoft.com/dotnet/Sdk/${BOOT_PV}/dotnet-sdk-${BOOT_PV}-linux-arm64.tar.gz
+		https://builds.dotnet.microsoft.com/dotnet/source-build/Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz
 	)
 	loong? (
 		https://github.com/loongson/dotnet/releases/download/v${BOOT_PV}-loongarch64/dotnet-sdk-${BOOT_PV}-linux-loongarch64.tar.gz
 		https://github.com/loongson/dotnet/releases/download/v${BOOT_PV}-loongarch64/Private.SourceBuilt.Artifacts.${PSB_VER}.linux-loongarch64.tar.gz
 	)
+	ppc64? (
+		https://github.com/IBM/dotnet-s390x/releases/download/v${BOOT_PV}/dotnet-sdk-${BOOT_PV}-linux-ppc64le.tar.gz
+		https://github.com/IBM/dotnet-s390x/releases/download/v${BOOT_PV}/Private.SourceBuilt.Artifacts.${BOOT_PV}-servicing.linux-ppc64le.tar.gz
+	)
 	riscv? (
 		https://github.com/filipnavara/dotnet-riscv/releases/download/${BOOT_PV}/dotnet-sdk-${BOOT_PV}-linux-riscv64.tar.gz
 		https://repo.aosc.io/debs/pool/stable/main/d/dotnet-sdk-10.0-source-built-artifacts_${BOOT_PV}-0_riscv64.deb
 	)
-	!loong? ( !riscv? (
-		https://builds.dotnet.microsoft.com/dotnet/source-build/Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz
-	) )
 "
 S="${WORKDIR}/${P}"
 
 LICENSE="MIT"
 SLOT="${SDK_SLOT}/${RUNTIME_SLOT}"
-KEYWORDS="~amd64 ~arm64 ~loong ~riscv"
+KEYWORDS="~amd64 ~arm64 ~loong ~ppc64 ~riscv"
 
 # STRIP="llvm-strip" corrupts some executables when using the patchelf hack.
 # Be safe and restrict it for source-built too, bug https://bugs.gentoo.org/923430
@@ -81,9 +88,9 @@ EXTRA_NUGETS_DEPEND="
 	~dev-dotnet/dotnet-runtime-nugets-8.0.30
 	~dev-dotnet/dotnet-runtime-nugets-9.0.19
 "
-# net6/net7/net8/net9 targeting packs in the Gentoo tree have no loongarch
-# or riscv64 RID and are not keyworded for those arches. The 10.0.12 pack set
-# in this overlay is.
+# net6/net7/net8/net9 targeting packs in the Gentoo tree have no loongarch,
+# ppc64le or riscv64 RID and are not keyworded for those arches. The 10.0.12
+# pack set in this overlay is.
 PDEPEND="
 	${CURRENT_NUGETS_DEPEND}
 	amd64? ( ${EXTRA_NUGETS_DEPEND} )
@@ -183,6 +190,11 @@ check_requirements_locale() {
 }
 
 pkg_pretend() {
+	# .NET has no big-endian ppc64 RID.
+	if use ppc64 && [[ $(tc-endian) == big ]] ; then
+		die "${PN} only supports little-endian ppc64 (ppc64le)"
+	fi
+
 	check-reqs_pkg_pretend
 
 	check_requirements_locale
@@ -283,6 +295,8 @@ EOF
 		boot_rid="linux-arm64"
 	elif use loong ; then
 		boot_rid="linux-loongarch64"
+	elif use ppc64 ; then
+		boot_rid="linux-ppc64le"
 	elif use riscv ; then
 		boot_rid="linux-riscv64"
 	else
@@ -294,6 +308,9 @@ EOF
 
 	if use loong ; then
 		psb="Private.SourceBuilt.Artifacts.${PSB_VER}.linux-loongarch64.tar.gz"
+		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
+	elif use ppc64 ; then
+		psb="Private.SourceBuilt.Artifacts.${BOOT_PV}-servicing.linux-ppc64le.tar.gz"
 		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
 	elif use riscv ; then
 		# AOSC ships the 10.0.111 linux-riscv64 artifact archive inside a deb.
@@ -336,8 +353,8 @@ EOF
 	local -a prep_args=(
 		--no-sdk
 		--no-prebuilts
-		# amd64/arm64 were rewritten above. loong/riscv archives are already
-		# the arch-specific set; Azure has no packs for those RIDs.
+		# amd64/arm64 were rewritten above. loong/ppc64/riscv archives are
+		# already the arch-specific set; Azure has no packs for those RIDs.
 		--no-bootstrap
 	)
 
@@ -378,9 +395,17 @@ src_compile() {
 		--with-system-libs "+brotli+icu+libunwind+rapidjson+zlib+"
 		--configuration "Release"
 	)
-	# Host detection would brand the output gentoo-<version>-riscv64.
-	# The bootstrap archives and the portable RID are linux-riscv64.
-	if use riscv ; then
+	# Host detection would brand the output gentoo-<version>-<arch>.
+	# The bootstrap archives and the portable RID are linux-<arch>.
+	if use ppc64 ; then
+		# CoreCLR has no ppc64le port.
+		buildopts+=(
+			--os linux
+			--rid linux-ppc64le
+			--arch ppc64le
+			--use-mono-runtime
+		)
+	elif use riscv ; then
 		buildopts+=(
 			--os linux
 			--rid linux-riscv64

@@ -3,7 +3,8 @@
 <pkgmetadata>
 	<longdescription lang="en">
 		NuGet packs for the .NET runtime. The 10.0.12 ebuild also fetches the
-		LoongArch64 packs from Loongson's NuGet feed.
+		LoongArch64 packs from Loongson's NuGet feed and the ppc64le packs from
+		IBM's dotnet-s390x releases.
 	</longdescription>
 	<upstream>
 		<remote-id type="github">dotnet/runtime</remote-id>

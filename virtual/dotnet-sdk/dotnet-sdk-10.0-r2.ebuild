@@ -6,7 +6,7 @@ EAPI=8
 DESCRIPTION="Virtual for .NET SDK"
 
 SLOT="${PV}"
-KEYWORDS="amd64 arm arm64 ~loong ~riscv"
+KEYWORDS="amd64 arm arm64 ~loong ~ppc64 ~riscv"
 
 RDEPEND="
 	|| (

@@ -1,0 +1,51 @@
+Recognize loongarch64 in Chapel and its bundled qthreads.
+
+* chplenv classified loongarch64 as linux32.
+* LoongArch compilers select the CPU with -march=, not -mcpu=.
+* qthreads stopped at "Unsupported architecture"; with an arch id it
+  uses its generic atomics and the system context switch.
+
+--- a/util/chplenv/chpl_platform.py
++++ b/util/chplenv/chpl_platform.py
+@@ -51,7 +51,7 @@
+                     platform_val = "linux64_32"
+                 else:
+                     platform_val = "linux64"
+-            elif machine in ["aarch64", "arm64", "riscv64"]:
++            elif machine in ["aarch64", "arm64", "loongarch64", "riscv64"]:
+                 platform_val = "linux64"
+             else:
+                 platform_val = "linux32"
+--- a/util/chplenv/chpl_cpu.py
++++ b/util/chplenv/chpl_cpu.py
+@@ -223,8 +223,9 @@
+ 
+     argname = None
+     if cpu and cpu != "none" and cpu != "unknown":
+-        # x86 uses -march= where the others use -mcpu=
+-        if is_x86_variant(get_native_machine()):
++        # x86 and LoongArch use -march= where the others use -mcpu=
++        machine = get_native_machine()
++        if is_x86_variant(machine) or machine == "loongarch64":
+             argname = "arch"
+         else:
+             argname = "cpu"
+--- a/third-party/qthread/qthread-src/include/qthread/common.h
++++ b/third-party/qthread/qthread-src/include/qthread/common.h
+@@ -44,6 +44,7 @@
+ #define QTHREAD_ARM 12
+ #define QTHREAD_ARMV8_A64 13
+ #define QTHREAD_RISCV 14
++#define QTHREAD_LOONGARCH64 15
+ 
+ #if defined(__amd64__) || defined(_M_AMD_64)
+ #define QTHREAD_ASSEMBLY_ARCH QTHREAD_AMD64
+@@ -59,6 +60,8 @@
+ #define QTHREAD_ASSEMBLY_ARCH QTHREAD_POWERPC32
+ #elif defined(__riscv)
+ #define QTHREAD_ASSEMBLY_ARCH QTHREAD_RISCV
++#elif defined(__loongarch64)
++#define QTHREAD_ASSEMBLY_ARCH QTHREAD_LOONGARCH64
+ #else
+ #error "Unsupported architecture"
+ #endif

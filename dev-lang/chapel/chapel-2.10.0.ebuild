@@ -15,7 +15,7 @@ SRC_URI="https://github.com/chapel-lang/chapel/releases/download/${PV}/${P}.tar.
 
 LICENSE="Apache-2.0 BSD MIT"
 SLOT="0"
-KEYWORDS="~amd64 ~arm64"
+KEYWORDS="~amd64 ~arm64 ~loong"
 IUSE="test"
 REQUIRED_USE="${PYTHON_REQUIRED_USE}"
 RESTRICT="!test? ( test )"
@@ -45,6 +45,10 @@ BDEPEND="
 
 # System LLVM needs about 2G; bundled LLVM would need 4G.
 CHECKREQS_MEMORY="2G"
+
+PATCHES=(
+	"${FILESDIR}/${P}-loongarch64.patch"
+)
 
 pkg_pretend() {
 	check-reqs_pkg_pretend

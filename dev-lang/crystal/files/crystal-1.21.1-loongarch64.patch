@@ -1,0 +1,2311 @@
+diff --git a/src/compiler/crystal/codegen/abi.cr b/src/compiler/crystal/codegen/abi.cr
+index 2513446..a6435c2 100644
+--- a/src/compiler/crystal/codegen/abi.cr
++++ b/src/compiler/crystal/codegen/abi.cr
+@@ -24,6 +24,8 @@ abstract class Crystal::ABI
+       AArch64.new(target_machine)
+     when /arm/
+       ARM.new(target_machine)
++    when /loongarch64/
++      LoongArch64.new(target_machine)
+     when /avr/
+       AVR.new(target_machine, target_machine.cpu)
+     when /wasm32/
+@@ -34,6 +36,14 @@ abstract class Crystal::ABI
+   end
+ 
+   abstract def abi_info(atys : Array(LLVM::Type), rty : LLVM::Type, ret_def : Bool, context : Context)
++
++  # Same as above, with the signedness of each integer argument (`nil` for
++  # anything else). Only targets whose C ABI extends narrow integers
++  # according to their signedness need to override this.
++  def abi_info(atys : Array(LLVM::Type), rty : LLVM::Type, ret_def : Bool, context : LLVM::Context, signedness : Array(Bool?))
++    abi_info(atys, rty, ret_def, context)
++  end
++
+   abstract def size(type : LLVM::Type)
+   abstract def align(type : LLVM::Type)
+ 
+diff --git a/src/compiler/crystal/codegen/abi/loongarch64.cr b/src/compiler/crystal/codegen/abi/loongarch64.cr
+new file mode 100644
+index 0000000..94f5d10
+--- /dev/null
++++ b/src/compiler/crystal/codegen/abi/loongarch64.cr
+@@ -0,0 +1,162 @@
++require "../abi"
++
++# Based on clang's LoongArch ABI lowering for LP64D:
++# https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/CodeGen/Targets/LoongArch.cpp
++class Crystal::ABI::LoongArch64 < Crystal::ABI
++  # Width of the general purpose and floating point registers, in bytes.
++  GRLEN = 8
++  FRLEN = 8
++
++  # Number of argument registers of each kind.
++  NUM_GARS = 8
++  NUM_FARS = 8
++
++  def abi_info(atys : Array(LLVM::Type), rty : LLVM::Type, ret_def : Bool, context : LLVM::Context) : Crystal::ABI::FunctionType
++    abi_info(atys, rty, ret_def, context, Array(Bool?).new(atys.size, nil))
++  end
++
++  def abi_info(atys : Array(LLVM::Type), rty : LLVM::Type, ret_def : Bool, context : LLVM::Context, signedness : Array(Bool?)) : Crystal::ABI::FunctionType
++    ret_ty = compute_return_type(rty, ret_def, context)
++
++    gars = ret_ty.kind.indirect? ? NUM_GARS - 1 : NUM_GARS
++    fars = NUM_FARS
++    arg_tys = atys.map_with_index do |aty, i|
++      arg_ty, gars, fars = classify(aty, context, signedness[i]?, gars, fars)
++      arg_ty
++    end
++
++    FunctionType.new(arg_tys, ret_ty)
++  end
++
++  def align(type : LLVM::Type) : Int32
++    align(type, 8)
++  end
++
++  def size(type : LLVM::Type) : Int32
++    size(type, 8)
++  end
++
++  private def compute_return_type(rty, ret_def, context)
++    return ArgType.direct(context.void) unless ret_def
++
++    # Return values follow the argument rules, with two registers of each kind.
++    ret_ty, _, _ = classify(rty, context, nil, 2, 2)
++    ret_ty.kind.indirect? ? ArgType.indirect(rty, LLVM::Attribute::StructRet) : ret_ty
++  end
++
++  # Classifies a value given the argument registers still available, and
++  # returns its ABI type along with the registers left afterwards.
++  private def classify(type, context, signed, gars, fars) : {ArgType, Int32, Int32}
++    case type.kind
++    when .float?, .double?
++      return {ArgType.direct(type), gars, fars - 1} if fars > 0
++      return {ArgType.direct(type), {gars - 1, 0}.max, fars}
++    when .integer?, .pointer?
++      needed = size(type) > GRLEN ? 2 : 1
++      return {non_struct(type, signed), {gars - needed, 0}.max, fars}
++    end
++
++    type_size = size(type)
++
++    # Zero-sized aggregates (empty structs) are not passed at all.
++    return {ArgType.ignore(type), gars, fars} if type_size == 0
++
++    # A struct made of one float, two floats, or a float and an integer is
++    # passed in floating point registers (plus one general purpose register),
++    # as long as enough of them are left.
++    if fields = fp_fields(type)
++      needed_fars = fields.count { |field| float?(field) }
++      needed_gars = fields.size - needed_fars
++      if needed_fars <= fars && needed_gars <= gars
++        cast = fields.size == 1 ? fields.first : context.struct(fields)
++        return {ArgType.direct(type, cast), gars - needed_gars, fars - needed_fars}
++      end
++    end
++
++    # Other aggregates of up to two registers are coerced to integers, larger
++    # ones are passed by reference.
++    if type_size <= GRLEN
++      {ArgType.direct(type, context.int64), {gars - 1, 0}.max, fars}
++    elsif type_size <= 2 * GRLEN
++      cast = align(type) == 2 * GRLEN ? context.int128 : context.int64.array(2)
++      {ArgType.direct(type, cast), {gars - 2, 0}.max, fars}
++    else
++      {ArgType.indirect(type, nil), {gars - 1, 0}.max, fars}
++    end
++  end
++
++  # Returns the flattened fields of `type` when they qualify for the floating
++  # point calling convention: one float, two floats, or a float and an integer
++  # of at most GRLEN bytes.
++  private def fp_fields(type) : Array(LLVM::Type)?
++    fields = [] of {LLVM::Type, Int32}
++    return unless flatten_fp_fields(type, 0, fields)
++
++    case fields.size
++    when 1
++      first, offset = fields[0]
++      [first] if float?(first) && offset == 0
++    when 2
++      first, first_offset = fields[0]
++      second, second_offset = fields[1]
++      return unless float?(first) || float?(second)
++
++      # The coerced value is built by copying the struct's bytes into the
++      # cast type, so the fields must sit where the cast type puts them.
++      if first_offset == 0 && second_offset == align_offset(size(first), second)
++        [first, second]
++      end
++    end
++  end
++
++  private def flatten_fp_fields(type, offset, fields) : Bool
++    case type.kind
++    when .float?, .double?
++      return false if fields.size == 2
++      fields << {type, offset}
++    when .integer?
++      return false if fields.size == 2 || size(type) > GRLEN
++      # two integers do not qualify
++      return false if fields.any? { |(field, _)| field.kind.integer? }
++      fields << {type, offset}
++    when .array?
++      element = type.element_type
++      element_size = size(element)
++      type.array_size.times do |i|
++        return false unless flatten_fp_fields(element, offset + i * element_size, fields)
++      end
++    when .struct?
++      return false if type.packed_struct?
++      field_offset = 0
++      type.struct_element_types.each do |element|
++        field_offset = align_offset(field_offset, element)
++        return false unless flatten_fp_fields(element, offset + field_offset, fields)
++        field_offset += size(element)
++      end
++    else
++      # pointers never qualify
++      return false
++    end
++    true
++  end
++
++  private def float?(type)
++    type.kind.float? || type.kind.double?
++  end
++
++  private def non_struct(type, signed)
++    ArgType.direct(type, attr: extension(type, signed))
++  end
++
++  # Integers narrower than GRLEN are extended by the caller: 32-bit ones are
++  # always sign extended, narrower ones according to their signedness.
++  private def extension(type, signed)
++    return unless type.kind.integer?
++
++    case type.int_width
++    when 1     then LLVM::Attribute::ZExt
++    when 8, 16 then signed == false ? LLVM::Attribute::ZExt : LLVM::Attribute::SExt
++    when 32    then LLVM::Attribute::SExt
++    end
++  end
++end
+diff --git a/src/compiler/crystal/codegen/fun.cr b/src/compiler/crystal/codegen/fun.cr
+index 5143f71..e7f5f62 100644
+--- a/src/compiler/crystal/codegen/fun.cr
++++ b/src/compiler/crystal/codegen/fun.cr
+@@ -434,15 +434,24 @@ class Crystal::CodeGenVisitor
+ 
+     llvm_args_types = external.args.map { |arg| llvm_c_type(arg.type) }
+     llvm_return_type = llvm_c_return_type(external.type)
+-    @abi.abi_info(llvm_args_types, llvm_return_type, !llvm_return_type.void?, llvm_context)
++    signedness = external.args.map { |arg| c_integer_signed?(arg.type) }
++    @abi.abi_info(llvm_args_types, llvm_return_type, !llvm_return_type.void?, llvm_context, signedness)
+   end
+ 
+   def abi_info(external : Def, node : Call)
+-    llvm_args_types = node.args.map_with_index do |arg, i|
+-      llvm_c_type((external.args[i]? || arg).type)
++    arg_types = node.args.map_with_index do |arg, i|
++      (external.args[i]? || arg).type
+     end
++    llvm_args_types = arg_types.map { |arg_type| llvm_c_type(arg_type) }
+     llvm_return_type = llvm_c_return_type(external.type)
+-    @abi.abi_info(llvm_args_types, llvm_return_type, !llvm_return_type.void?, llvm_context)
++    signedness = arg_types.map { |arg_type| c_integer_signed?(arg_type) }
++    @abi.abi_info(llvm_args_types, llvm_return_type, !llvm_return_type.void?, llvm_context, signedness)
++  end
++
++  private def c_integer_signed?(type : Type) : Bool?
++    type = type.remove_typedef
++    type = type.base_type if type.is_a?(EnumType)
++    type.signed? if type.is_a?(IntegerType)
+   end
+ 
+   def setup_context_fun(mangled_name, target_def, llvm_args_types, llvm_return_type) : Nil
+diff --git a/src/compiler/crystal/codegen/target.cr b/src/compiler/crystal/codegen/target.cr
+index cf11ed9..e0b9f20 100644
+--- a/src/compiler/crystal/codegen/target.cr
++++ b/src/compiler/crystal/codegen/target.cr
+@@ -51,7 +51,7 @@ class Crystal::Codegen::Target
+ 
+   def pointer_bit_width
+     case @architecture
+-    when "aarch64", "x86_64"
++    when "aarch64", "loongarch64", "x86_64"
+       64
+     when "arm", "i386", "wasm32"
+       32
+@@ -64,7 +64,7 @@ class Crystal::Codegen::Target
+ 
+   def size_bit_width
+     case @architecture
+-    when "aarch64", "x86_64"
++    when "aarch64", "loongarch64", "x86_64"
+       64
+     when "arm", "i386", "wasm32"
+       32
+@@ -212,6 +212,15 @@ class Crystal::Codegen::Target
+       if cpu.empty? && !features.includes?("fp") && armhf?
+         features += "+vfp2"
+       end
++    when "loongarch64"
++      LLVM.init_loongarch
++
++      # Linux uses the LP64D ABI, but LLVM's default CPU has no FPU and then
++      # silently falls back to the soft-float LP64S ABI. Request the double
++      # precision FPU unless the features already choose one.
++      unless features.split(',').any? { |feature| feature.lchop.in?("d", "f") }
++        features = features.empty? ? "+d" : "#{features},+d"
++      end
+     when "avr"
+       LLVM.init_avr
+ 
+diff --git a/src/compiler/crystal/ffi/lib_ffi.cr b/src/compiler/crystal/ffi/lib_ffi.cr
+index 654908e..3543db9 100644
+--- a/src/compiler/crystal/ffi/lib_ffi.cr
++++ b/src/compiler/crystal/ffi/lib_ffi.cr
+@@ -68,6 +68,16 @@ module Crystal
+         {% else %}
+           DEFAULT = SYSV
+         {% end %}
++      {% elsif flag?(:loongarch64) %}
++        LP64S = 1
++        LP64F
++        LP64D
++        ILP32S
++        ILP32F
++        ILP32D
++        LAST
++
++        DEFAULT = LP64D
+       {% else %}
+         {% raise "Unsupported target for ABI" %}
+       {% end %}
+@@ -107,6 +117,11 @@ module Crystal
+       rtype : Type*
+       bytes : LibC::UInt
+       flags : LibC::UInt
++      {% if flag?(:loongarch64) %}
++        # FFI_EXTRA_CIF_FIELDS
++        loongarch_nfixedargs : LibC::UInt
++        loongarch_unused : LibC::UInt
++      {% end %}
+     end
+ 
+     struct Type
+diff --git a/src/exception/lib_unwind.cr b/src/exception/lib_unwind.cr
+index 83350c1..67bfef4 100644
+--- a/src/exception/lib_unwind.cr
++++ b/src/exception/lib_unwind.cr
+@@ -135,6 +135,9 @@ lib LibUnwind
+   {% if flag?(:x86_64) || flag?(:arm) || flag?(:aarch64) %}
+     EH_REGISTER_0 = 0
+     EH_REGISTER_1 = 1
++  {% elsif flag?(:loongarch64) %}
++    EH_REGISTER_0 = 4 # $a0
++    EH_REGISTER_1 = 5 # $a1
+   {% else %}
+     EH_REGISTER_0 = 0
+     EH_REGISTER_1 = 2
+diff --git a/src/fiber/context/loongarch64.cr b/src/fiber/context/loongarch64.cr
+new file mode 100644
+index 0000000..8dd5b36
+--- /dev/null
++++ b/src/fiber/context/loongarch64.cr
+@@ -0,0 +1,99 @@
++{% skip_file unless flag?(:loongarch64) %}
++
++class Fiber
++  # :nodoc:
++  def makecontext(stack_ptr, fiber_main) : Nil
++    # in LoongArch64, the context switch push/pop 11 registers and 8 FPU
++    # registers, and two more to store the argument of `fiber_main` (+ padding
++    # and alignment), we thus reserve space for 22 pointers:
++    @context.stack_top = (stack_ptr - 22).as(Void*)
++    @context.resumable = 1
++
++    stack_ptr[-2] = self.as(Void*)      # $a0: puts `self` as first argument for `fiber_main`
++    stack_ptr[-14] = fiber_main.pointer # $ra: initial `resume` will `jr` to this address
++  end
++
++  # :nodoc:
++  @[NoInline]
++  @[Naked]
++  def self.swapcontext(current_context, new_context) : Nil
++    #                  $a0            , $a1
++
++    # preserve/restore the LP64 callee-saved registers:
++    # $s0-$s8   ($r23-$r31)
++    # $fp       ($r22)
++    # $ra       ($r1)
++    # $fs0-$fs7 ($f24-$f31), only the low 64 bits are callee-saved
++    # $a0       self argument (initial call)
++    #
++    # LLVM inline asm uses `$` for operands, so register names are written as
++    # `$$reg`.
++    #
++    # Eventually reset $ra to zero to avoid the unwinder to mistake the
++    # context switch as a regular call.
++    {% begin %}
++      asm("
++      addi.d  $$sp, $$sp, -176
++      fst.d   $$fs0, $$sp, 0
++      fst.d   $$fs1, $$sp, 8
++      fst.d   $$fs2, $$sp, 16
++      fst.d   $$fs3, $$sp, 24
++      fst.d   $$fs4, $$sp, 32
++      fst.d   $$fs5, $$sp, 40
++      fst.d   $$fs6, $$sp, 48
++      fst.d   $$fs7, $$sp, 56
++      st.d    $$ra, $$sp, 64
++      st.d    $$fp, $$sp, 72
++      st.d    $$s0, $$sp, 80
++      st.d    $$s1, $$sp, 88
++      st.d    $$s2, $$sp, 96
++      st.d    $$s3, $$sp, 104
++      st.d    $$s4, $$sp, 112
++      st.d    $$s5, $$sp, 120
++      st.d    $$s6, $$sp, 128
++      st.d    $$s7, $$sp, 136
++      st.d    $$s8, $$sp, 144
++      st.d    $$a0, $$sp, 160       // push 1st argument (+ alignment)
++      st.d    $$a1, $$sp, 168
++
++      st.d    $$sp, $$a0, 0         // current_context.stack_top = sp
++      {% unless flag?(:without_mt) %}
++      dbar    0                     // barrier: ensure registers are stored
++      {% end %}
++      addi.d  $$t0, $$zero, 1       // current_context.resumable = 1
++      st.d    $$t0, $$a0, 8
++
++      st.d    $$zero, $$a1, 8       // new_context.resumable = 0
++      ld.d    $$sp, $$a1, 0         // sp = new_context.stack_top
++
++      ld.d    $$a0, $$sp, 160       // pop 1st argument (+ alignment)
++      ld.d    $$a1, $$sp, 168
++      ld.d    $$s8, $$sp, 144
++      ld.d    $$s7, $$sp, 136
++      ld.d    $$s6, $$sp, 128
++      ld.d    $$s5, $$sp, 120
++      ld.d    $$s4, $$sp, 112
++      ld.d    $$s3, $$sp, 104
++      ld.d    $$s2, $$sp, 96
++      ld.d    $$s1, $$sp, 88
++      ld.d    $$s0, $$sp, 80
++      ld.d    $$fp, $$sp, 72
++      ld.d    $$ra, $$sp, 64
++      fld.d   $$fs7, $$sp, 56
++      fld.d   $$fs6, $$sp, 48
++      fld.d   $$fs5, $$sp, 40
++      fld.d   $$fs4, $$sp, 32
++      fld.d   $$fs3, $$sp, 24
++      fld.d   $$fs2, $$sp, 16
++      fld.d   $$fs1, $$sp, 8
++      fld.d   $$fs0, $$sp, 0
++      addi.d  $$sp, $$sp, 176
++
++      // avoid a stack corruption that will confuse the unwinder
++      move    $$t0, $$ra            // save ra
++      move    $$ra, $$zero          // reset ra
++      jr      $$t0                  // jump to new pc value
++      ")
++    {% end %}
++  end
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/arpa/inet.cr b/src/lib_c/loongarch64-linux-gnu/c/arpa/inet.cr
+new file mode 100644
+index 0000000..b42387d
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/arpa/inet.cr
+@@ -0,0 +1,9 @@
++require "../netinet/in"
++require "../stdint"
++
++lib LibC
++  fun htons(hostshort : UInt16T) : UInt16T
++  fun ntohs(netshort : UInt16T) : UInt16T
++  fun inet_ntop(af : Int, cp : Void*, buf : Char*, len : SocklenT) : Char*
++  fun inet_pton(af : Int, cp : Char*, buf : Void*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/dirent.cr b/src/lib_c/loongarch64-linux-gnu/c/dirent.cr
+new file mode 100644
+index 0000000..778485d
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/dirent.cr
+@@ -0,0 +1,23 @@
++require "./sys/types"
++
++lib LibC
++  type DIR = Void
++
++  DT_UNKNOWN =  0
++  DT_DIR     =  4
++  DT_LNK     = 10
++
++  struct Dirent
++    d_ino : InoT
++    d_off : OffT
++    d_reclen : UShort
++    d_type : UChar
++    d_name : StaticArray(Char, 256)
++  end
++
++  fun closedir(dirp : DIR*) : Int
++  fun opendir(name : Char*) : DIR*
++  fun readdir(dirp : DIR*) : Dirent*
++  fun rewinddir(dirp : DIR*) : Void
++  fun dirfd(dirp : DIR*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/dlfcn.cr b/src/lib_c/loongarch64-linux-gnu/c/dlfcn.cr
+new file mode 100644
+index 0000000..96fa45c
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/dlfcn.cr
+@@ -0,0 +1,24 @@
++{% unless flag?(:interpreted) %}
++  @[Link("dl")]
++{% end %}
++
++lib LibC
++  RTLD_LAZY    = 0x00001
++  RTLD_NOW     = 0x00002
++  RTLD_GLOBAL  = 0x00100
++  RTLD_LOCAL   =       0
++  RTLD_DEFAULT = Pointer(Void).new(0_u64)
++
++  struct DlInfo
++    dli_fname : Char*
++    dli_fbase : Void*
++    dli_sname : Char*
++    dli_saddr : Void*
++  end
++
++  fun dlclose(handle : Void*) : Int
++  fun dlerror : Char*
++  fun dlopen(file : Char*, mode : Int) : Void*
++  fun dlsym(handle : Void*, name : Char*) : Void*
++  fun dladdr(address : Void*, info : DlInfo*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/elf.cr b/src/lib_c/loongarch64-linux-gnu/c/elf.cr
+new file mode 100644
+index 0000000..f9ccc3a
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/elf.cr
+@@ -0,0 +1,24 @@
++require "./sys/types"
++
++lib LibC
++  alias Elf_Half = UInt16T
++  alias Elf_Word = UInt32T
++  alias Elf_Sword = Int32T
++  alias Elf_Xword = UInt64T
++  alias Elf_Sxword = Int64T
++  alias Elf_Addr = UInt64T
++  alias Elf_Off = UInt64T
++  alias Elf_Section = UInt16T
++  alias Elf_Versym = Elf_Half
++
++  struct Elf_Phdr
++    type : Elf_Word    # Segment type
++    flags : Elf_Word   # Segment flags
++    offset : Elf_Off   # Segment file offset
++    vaddr : Elf_Addr   # Segment virtual address
++    paddr : Elf_Addr   # Segment physical address
++    filesz : Elf_Xword # Segment size in file
++    memsz : Elf_Xword  # Segment size in memory
++    align : Elf_Xword  # Segment alignment
++  end
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/errno.cr b/src/lib_c/loongarch64-linux-gnu/c/errno.cr
+new file mode 100644
+index 0000000..d23eb5c
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/errno.cr
+@@ -0,0 +1,86 @@
++lib LibC
++  fun __errno_location : Int*
++
++  E2BIG           =   7
++  EACCES          =  13
++  EADDRINUSE      =  98
++  EADDRNOTAVAIL   =  99
++  EAFNOSUPPORT    =  97
++  EAGAIN          =  11
++  EALREADY        = 114
++  EBADF           =   9
++  EBADMSG         =  74
++  EBADR           =  53
++  EBUSY           =  16
++  ECANCELED       = 125
++  ECHILD          =  10
++  ECONNABORTED    = 103
++  ECONNREFUSED    = 111
++  ECONNRESET      = 104
++  EDEADLK         =  35
++  EDESTADDRREQ    =  89
++  EDOM            =  33
++  EDQUOT          = 122
++  EEXIST          =  17
++  EFAULT          =  14
++  EFBIG           =  27
++  EHOSTUNREACH    = 113
++  EIDRM           =  43
++  EILSEQ          =  84
++  EINPROGRESS     = 115
++  EINTR           =   4
++  EINVAL          =  22
++  EIO             =   5
++  EISCONN         = 106
++  EISDIR          =  21
++  ELOOP           =  40
++  EMFILE          =  24
++  EMLINK          =  31
++  EMSGSIZE        =  90
++  EMULTIHOP       =  72
++  ENAMETOOLONG    =  36
++  ENETDOWN        = 100
++  ENETRESET       = 102
++  ENETUNREACH     = 101
++  ENFILE          =  23
++  ENOBUFS         = 105
++  ENODEV          =  19
++  ENOENT          =   2
++  ENOEXEC         =   8
++  ENOLCK          =  37
++  ENOLINK         =  67
++  ENOMEM          =  12
++  ENOMSG          =  42
++  ENOPROTOOPT     =  92
++  ENOSPC          =  28
++  ENOSYS          =  38
++  ENOTCONN        = 107
++  ENOTDIR         =  20
++  ENOTEMPTY       =  39
++  ENOTRECOVERABLE = 131
++  ENOTSOCK        =  88
++  ENOTSUP         = LibC::EOPNOTSUPP
++  ENOTTY          =  25
++  ENXIO           =   6
++  EOPNOTSUPP      =  95
++  EOVERFLOW       =  75
++  EOWNERDEAD      = 130
++  EPERM           =   1
++  EPIPE           =  32
++  EPROTO          =  71
++  EPROTONOSUPPORT =  93
++  EPROTOTYPE      =  91
++  ERANGE          =  34
++  EROFS           =  30
++  ESPIPE          =  29
++  ESRCH           =   3
++  ESTALE          = 116
++  ETIMEDOUT       = 110
++  ETXTBSY         =  26
++  EWOULDBLOCK     = LibC::EAGAIN
++  EXDEV           = 18
++  ENODATA         = 61
++  ENOSR           = 63
++  ENOSTR          = 60
++  ETIME           = 62
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/fcntl.cr b/src/lib_c/loongarch64-linux-gnu/c/fcntl.cr
+new file mode 100644
+index 0000000..4b33c82
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/fcntl.cr
+@@ -0,0 +1,34 @@
++require "./sys/types"
++require "./sys/stat"
++require "./unistd"
++
++lib LibC
++  F_GETFD    =         1
++  F_SETFD    =         2
++  F_GETFL    =         3
++  F_SETFL    =         4
++  FD_CLOEXEC =         1
++  O_CLOEXEC  = 0o2000000
++  O_CREAT    =     0o100
++  O_EXCL     =     0o200
++  O_NOFOLLOW =  0o400000
++  O_TRUNC    =    0o1000
++  O_APPEND   =    0o2000
++  O_NONBLOCK =    0o4000
++  O_SYNC     = 0o4010000
++  O_RDONLY   =       0o0
++  O_RDWR     =       0o2
++  O_WRONLY   =       0o1
++  AT_FDCWD   =      -100
++
++  struct Flock
++    l_type : Short
++    l_whence : Short
++    l_start : OffT
++    l_len : OffT
++    l_pid : PidT
++  end
++
++  fun fcntl(fd : Int, cmd : Int, ...) : Int
++  fun open(file : Char*, oflag : Int, ...) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/grp.cr b/src/lib_c/loongarch64-linux-gnu/c/grp.cr
+new file mode 100644
+index 0000000..2fc3512
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/grp.cr
+@@ -0,0 +1,11 @@
++lib LibC
++  struct Group
++    gr_name : Char*
++    gr_passwd : Char*
++    gr_gid : GidT
++    gr_mem : Char**
++  end
++
++  fun getgrnam_r(name : Char*, grp : Group*, buf : Char*, bufsize : SizeT, result : Group**) : Int
++  fun getgrgid_r(gid : GidT, grp : Group*, buf : Char*, bufsize : SizeT, result : Group**) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/iconv.cr b/src/lib_c/loongarch64-linux-gnu/c/iconv.cr
+new file mode 100644
+index 0000000..6814db7
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/iconv.cr
+@@ -0,0 +1,9 @@
++require "./stddef"
++
++lib LibC
++  type IconvT = Void*
++
++  fun iconv(cd : IconvT, inbuf : Char**, inbytesleft : SizeT*, outbuf : Char**, outbytesleft : SizeT*) : SizeT
++  fun iconv_close(cd : IconvT) : Int
++  fun iconv_open(tocode : Char*, fromcode : Char*) : IconvT
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/limits.cr b/src/lib_c/loongarch64-linux-gnu/c/limits.cr
+new file mode 100644
+index 0000000..55c588c
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/limits.cr
+@@ -0,0 +1,4 @@
++lib LibC
++  NAME_MAX =  255
++  PATH_MAX = 4096
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/link.cr b/src/lib_c/loongarch64-linux-gnu/c/link.cr
+new file mode 100644
+index 0000000..5f93011
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/link.cr
+@@ -0,0 +1,17 @@
++require "./elf"
++
++lib LibC
++  struct DlPhdrInfo
++    addr : Elf_Addr
++    name : Char*
++    phdr : Elf_Phdr*
++    phnum : Elf_Half
++    adds : ULongLong
++    subs : ULongLong
++    tls_modid : SizeT
++    tls_data : Void*
++  end
++
++  alias DlPhdrCallback = (DlPhdrInfo*, LibC::SizeT, Void*) -> LibC::Int
++  fun dl_iterate_phdr(callback : DlPhdrCallback, data : Void*)
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/linux b/src/lib_c/loongarch64-linux-gnu/c/linux
+new file mode 120000
+index 0000000..9d8c0a3
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/linux
+@@ -0,0 +1 @@
++../../linux
+\ No newline at end of file
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/net/if.cr b/src/lib_c/loongarch64-linux-gnu/c/net/if.cr
+new file mode 100644
+index 0000000..c33747b
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/net/if.cr
+@@ -0,0 +1,9 @@
++require "../netinet/in"
++require "../stdint"
++
++lib LibC
++  IF_NAMESIZE = 16
++
++  fun if_nametoindex(ifname : Char*) : UInt
++  fun if_indextoname(ifindex : UInt, ifname : LibC::Char*) : LibC::Char*
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/netdb.cr b/src/lib_c/loongarch64-linux-gnu/c/netdb.cr
+new file mode 100644
+index 0000000..350fc22
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/netdb.cr
+@@ -0,0 +1,40 @@
++require "./netinet/in"
++require "./sys/socket"
++require "./stdint"
++
++lib LibC
++  AI_PASSIVE     = 0x0001
++  AI_CANONNAME   = 0x0002
++  AI_NUMERICHOST = 0x0004
++  AI_NUMERICSERV = 0x0400
++  AI_V4MAPPED    = 0x0008
++  AI_ALL         = 0x0010
++  AI_ADDRCONFIG  = 0x0020
++  EAI_AGAIN      =     -3
++  EAI_BADFLAGS   =     -1
++  EAI_FAIL       =     -4
++  EAI_NODATA     =     -5
++  EAI_FAMILY     =     -6
++  EAI_MEMORY     =    -10
++  EAI_NONAME     =     -2
++  EAI_SERVICE    =     -8
++  EAI_SOCKTYPE   =     -7
++  EAI_SYSTEM     =    -11
++  EAI_OVERFLOW   =    -12
++
++  struct Addrinfo
++    ai_flags : Int
++    ai_family : Int
++    ai_socktype : Int
++    ai_protocol : Int
++    ai_addrlen : SocklenT
++    ai_addr : Sockaddr*
++    ai_canonname : Char*
++    ai_next : Addrinfo*
++  end
++
++  fun freeaddrinfo(ai : Addrinfo*) : Void
++  fun gai_strerror(ecode : Int) : Char*
++  fun getaddrinfo(name : Char*, service : Char*, req : Addrinfo*, pai : Addrinfo**) : Int
++  fun getnameinfo(sa : Sockaddr*, salen : SocklenT, host : Char*, hostlen : SocklenT, serv : Char*, servlen : SocklenT, flags : Int) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/netinet/in.cr b/src/lib_c/loongarch64-linux-gnu/c/netinet/in.cr
+new file mode 100644
+index 0000000..f64b414
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/netinet/in.cr
+@@ -0,0 +1,70 @@
++require "../sys/socket"
++require "../stdint"
++
++lib LibC
++  IPPROTO_IP   =   0
++  IPPROTO_IPV6 =  41
++  IPPROTO_ICMP =   1
++  IPPROTO_RAW  = 255
++  IPPROTO_TCP  =   6
++  IPPROTO_UDP  =  17
++
++  alias InPortT = UInt16T
++  alias InAddrT = UInt32T
++
++  struct InAddr
++    s_addr : InAddrT
++  end
++
++  union In6AddrIn6U
++    __u6_addr8 : StaticArray(UInt8T, 16)
++    __u6_addr16 : StaticArray(UInt16T, 8)
++    __u6_addr32 : StaticArray(UInt32T, 4)
++  end
++
++  struct In6Addr
++    __in6_u : In6AddrIn6U
++  end
++
++  struct SockaddrIn
++    sin_family : SaFamilyT
++    sin_port : InPortT
++    sin_addr : InAddr
++    sin_zero : StaticArray(Char, 8)
++  end
++
++  struct SockaddrIn6
++    sin6_family : SaFamilyT
++    sin6_port : InPortT
++    sin6_flowinfo : UInt32T
++    sin6_addr : In6Addr
++    sin6_scope_id : UInt32T
++  end
++
++  IP_MULTICAST_IF   = 32
++  IPV6_MULTICAST_IF = 17
++
++  IP_MULTICAST_TTL    = 33
++  IPV6_MULTICAST_HOPS = 18
++
++  IP_MULTICAST_LOOP   = 34
++  IPV6_MULTICAST_LOOP = 19
++
++  IP_ADD_MEMBERSHIP = 35
++  IPV6_JOIN_GROUP   = 20
++
++  IP_DROP_MEMBERSHIP = 36
++  IPV6_LEAVE_GROUP   = 21
++
++  IPV6_V6ONLY = 26
++
++  struct IpMreq
++    imr_multiaddr : InAddr
++    imr_interface : InAddr
++  end
++
++  struct Ipv6Mreq
++    ipv6mr_multiaddr : In6Addr
++    ipv6mr_interface : UInt
++  end
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/netinet/tcp.cr b/src/lib_c/loongarch64-linux-gnu/c/netinet/tcp.cr
+new file mode 100644
+index 0000000..a1b95b8
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/netinet/tcp.cr
+@@ -0,0 +1,7 @@
++lib LibC
++  TCP_NODELAY   =  1
++  TCP_KEEPIDLE  =  4
++  TCP_KEEPINTVL =  5
++  TCP_KEEPCNT   =  6
++  TCP_ULP       = 31
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/poll.cr b/src/lib_c/loongarch64-linux-gnu/c/poll.cr
+new file mode 100644
+index 0000000..7cdbc6b
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/poll.cr
+@@ -0,0 +1,7 @@
++lib LibC
++  POLLIN    =    1
++  POLLOUT   =    4
++  POLLERR   =    8
++  POLLHUP   =   16
++  POLLRDHUP = 8192
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/pthread.cr b/src/lib_c/loongarch64-linux-gnu/c/pthread.cr
+new file mode 100644
+index 0000000..4d723f7
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/pthread.cr
+@@ -0,0 +1,47 @@
++require "./sys/types"
++
++# Starting with glibc 2.34, `pthread` is integrated into `libc` and may not even
++# be available as a separate shared library.
++# There's always a static library for compiled mode, but `Crystal::Loader` does not support
++# static libraries. So we just skip `pthread` entirely in interpreted mode.
++# The symbols are still available in the interpreter because they are loaded in the compiler.
++{% unless flag?(:interpreted) %}
++  @[Link("pthread")]
++{% end %}
++lib LibC
++  PTHREAD_MUTEX_ERRORCHECK = 2
++
++  PTHREAD_CANCEL_ENABLE  = 0
++  PTHREAD_CANCEL_DISABLE = 1
++
++  fun pthread_attr_destroy(attr : PthreadAttrT*) : Int
++  fun pthread_attr_getstack(addr : PthreadAttrT*, stackaddr : Void**, stacksize : SizeT*) : Int
++  fun pthread_condattr_destroy(attr : PthreadCondattrT*) : Int
++  fun pthread_condattr_init(attr : PthreadCondattrT*) : Int
++  fun pthread_condattr_setclock(attr : PthreadCondattrT*, type : ClockidT) : Int
++  fun pthread_cond_broadcast(cond : PthreadCondT*) : Int
++  fun pthread_cond_destroy(cond : PthreadCondT*) : Int
++  fun pthread_cond_init(cond : PthreadCondT*, cond_attr : PthreadCondattrT*) : Int
++  fun pthread_cond_signal(cond : PthreadCondT*) : Int
++  fun pthread_cond_timedwait(cond : PthreadCondT*, mutex : PthreadMutexT*, abstime : Timespec*) : Int
++  fun pthread_cond_wait(cond : PthreadCondT*, mutex : PthreadMutexT*) : Int
++  fun pthread_create(newthread : PthreadT*, attr : PthreadAttrT*, start_routine : Void* -> Void*, arg : Void*) : Int
++  fun pthread_detach(th : PthreadT) : Int
++  fun pthread_getattr_np(thread : PthreadT, attr : PthreadAttrT*) : Int
++  fun pthread_equal(thread1 : PthreadT, thread2 : PthreadT) : Int
++  fun pthread_join(th : PthreadT, thread_return : Void**) : Int
++  fun pthread_mutexattr_destroy(attr : PthreadMutexattrT*) : Int
++  fun pthread_mutexattr_init(attr : PthreadMutexattrT*) : Int
++  fun pthread_mutexattr_settype(attr : PthreadMutexattrT*, type : Int) : Int
++  fun pthread_mutex_destroy(mutex : PthreadMutexT*) : Int
++  fun pthread_mutex_init(mutex : PthreadMutexT*, mutexattr : PthreadMutexattrT*) : Int
++  fun pthread_mutex_lock(mutex : PthreadMutexT*) : Int
++  fun pthread_mutex_trylock(mutex : PthreadMutexT*) : Int
++  fun pthread_mutex_unlock(mutex : PthreadMutexT*) : Int
++  fun pthread_self : PthreadT
++  fun pthread_setname_np(PthreadT, Char*) : Int
++
++  # Set cancellability state of current thread to STATE, returning old
++  # state in *OLDSTATE if OLDSTATE is not NULL.
++  fun pthread_setcancelstate(__state : Int, __oldstate : Int*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/pwd.cr b/src/lib_c/loongarch64-linux-gnu/c/pwd.cr
+new file mode 100644
+index 0000000..dc2e53d
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/pwd.cr
+@@ -0,0 +1,14 @@
++lib LibC
++  struct Passwd
++    pw_name : Char*
++    pw_passwd : Char*
++    pw_uid : UidT
++    pw_gid : GidT
++    pw_gecos : Char*
++    pw_dir : Char*
++    pw_shell : Char*
++  end
++
++  fun getpwnam_r(login : Char*, pwstore : Passwd*, buf : Char*, bufsize : SizeT, result : Passwd**) : Int
++  fun getpwuid_r(uid : UidT, pwstore : Passwd*, buf : Char*, bufsize : SizeT, result : Passwd**) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sched.cr b/src/lib_c/loongarch64-linux-gnu/c/sched.cr
+new file mode 100644
+index 0000000..9d83ed1
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sched.cr
+@@ -0,0 +1,3 @@
++lib LibC
++  fun sched_yield : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/signal.cr b/src/lib_c/loongarch64-linux-gnu/c/signal.cr
+new file mode 100644
+index 0000000..445a451
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/signal.cr
+@@ -0,0 +1,91 @@
++require "./sys/types"
++require "./time"
++
++lib LibC
++  SIGHUP    =  1
++  SIGINT    =  2
++  SIGQUIT   =  3
++  SIGILL    =  4
++  SIGTRAP   =  5
++  SIGIOT    =  6
++  SIGABRT   =  6
++  SIGFPE    =  8
++  SIGKILL   =  9
++  SIGBUS    =  7
++  SIGSEGV   = 11
++  SIGSYS    = 31
++  SIGPIPE   = 13
++  SIGALRM   = 14
++  SIGTERM   = 15
++  SIGURG    = 23
++  SIGSTOP   = 19
++  SIGTSTP   = 20
++  SIGCONT   = 18
++  SIGCHLD   = 17
++  SIGCLD    = LibC::SIGCHLD
++  SIGTTIN   = 21
++  SIGTTOU   = 22
++  SIGIO     = 29
++  SIGXCPU   = 24
++  SIGXFSZ   = 25
++  SIGVTALRM = 26
++  SIGUSR1   = 10
++  SIGUSR2   = 12
++  SIGWINCH  = 28
++  SIGPWR    = 30
++  SIGSTKFLT = 16
++  SIGUNUSED = 31
++
++  SIGSTKSZ = 16384
++
++  SIG_SETMASK = 2
++
++  alias SighandlerT = Int ->
++  SIG_DFL = SighandlerT.new(Pointer(Void).new(0_u64), Pointer(Void).null)
++  SIG_IGN = SighandlerT.new(Pointer(Void).new(1_u64), Pointer(Void).null)
++
++  struct SigsetT
++    val : ULong[16] # (1024 / (8 * sizeof(ULong)))
++  end
++
++  SA_ONSTACK = 0x08000000
++  SA_RESTART = 0x10000000
++  SA_SIGINFO = 0x00000004
++
++  struct SiginfoT
++    si_signo : Int
++    si_errno : Int
++    si_code : Int
++    __pad0 : Int
++    si_addr : Void*               # Assuming the segfault form of siginfo_t
++    __pad1 : StaticArray(Int, 26) # __SI_PAD_SIZE (28) - sizeof(void*) / sizeof(int) = 26
++  end
++
++  alias SigactionHandlerT = (Int, SiginfoT*, Void*) ->
++
++  struct Sigaction
++    sa_sigaction : SigactionHandlerT
++    sa_mask : SigsetT
++    sa_flags : Int
++    sa_restorer : ->
++  end
++
++  struct StackT
++    ss_sp : Void*
++    ss_flags : Int
++    ss_size : SizeT
++  end
++
++  fun kill(pid : PidT, sig : Int) : Int
++  fun pthread_sigmask(Int, SigsetT*, SigsetT*) : Int
++  fun pthread_kill(PthreadT, Int) : Int
++  fun signal(sig : Int, handler : Int -> Void) : Int -> Void
++  fun sigaction(x0 : Int, x1 : Sigaction*, x2 : Sigaction*) : Int
++  fun sigaltstack(x0 : StackT*, x1 : StackT*) : Int
++  fun sigemptyset(SigsetT*) : Int
++  fun sigfillset(SigsetT*) : Int
++  fun sigaddset(SigsetT*, Int) : Int
++  fun sigdelset(SigsetT*, Int) : Int
++  fun sigismember(SigsetT*, Int) : Int
++  fun sigsuspend(SigsetT*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/stdarg.cr b/src/lib_c/loongarch64-linux-gnu/c/stdarg.cr
+new file mode 100644
+index 0000000..882d4f5
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/stdarg.cr
+@@ -0,0 +1,3 @@
++lib LibC
++  type VaList = Void*
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/stddef.cr b/src/lib_c/loongarch64-linux-gnu/c/stddef.cr
+new file mode 100644
+index 0000000..4afcdf3
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/stddef.cr
+@@ -0,0 +1,3 @@
++lib LibC
++  alias SizeT = ULong
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/stdint.cr b/src/lib_c/loongarch64-linux-gnu/c/stdint.cr
+new file mode 100644
+index 0000000..f1aae04
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/stdint.cr
+@@ -0,0 +1,10 @@
++lib LibC
++  alias Int8T = SChar
++  alias Int16T = Short
++  alias Int32T = Int
++  alias Int64T = Long
++  alias UInt8T = Char
++  alias UInt16T = UShort
++  alias UInt32T = UInt
++  alias UInt64T = ULong
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/stdio.cr b/src/lib_c/loongarch64-linux-gnu/c/stdio.cr
+new file mode 100644
+index 0000000..234929d
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/stdio.cr
+@@ -0,0 +1,9 @@
++require "./sys/types"
++require "./stddef"
++
++lib LibC
++  fun printf(format : Char*, ...) : Int
++  fun dprintf(fd : Int, format : Char*, ...) : Int
++  fun rename(old : Char*, new : Char*) : Int
++  fun snprintf(s : Char*, maxlen : SizeT, format : Char*, ...) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/stdlib.cr b/src/lib_c/loongarch64-linux-gnu/c/stdlib.cr
+new file mode 100644
+index 0000000..821f790
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/stdlib.cr
+@@ -0,0 +1,26 @@
++require "./stddef"
++require "./sys/wait"
++
++lib LibC
++  struct DivT
++    quot : Int
++    rem : Int
++  end
++
++  fun atof(nptr : Char*) : Double
++  fun div(numer : Int, denom : Int) : DivT
++  fun exit(status : Int) : NoReturn
++  fun free(ptr : Void*) : Void
++  fun getenv(name : Char*) : Char*
++  fun malloc(size : SizeT) : Void*
++  fun mkstemp(template : Char*) : Int
++  fun mkstemps(template : Char*, suffixlen : Int) : Int
++  fun putenv(string : Char*) : Int
++  fun realloc(ptr : Void*, size : SizeT) : Void*
++  fun realpath(name : Char*, resolved : Char*) : Char*
++  fun setenv(name : Char*, value : Char*, replace : Int) : Int
++  fun strtod(nptr : Char*, endptr : Char**) : Double
++  fun strtof(nptr : Char*, endptr : Char**) : Float
++  fun strtol(nptr : Char*, endptr : Char**, base : Int) : Long
++  fun unsetenv(name : Char*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/string.cr b/src/lib_c/loongarch64-linux-gnu/c/string.cr
+new file mode 100644
+index 0000000..0d012a5
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/string.cr
+@@ -0,0 +1,10 @@
++require "./stddef"
++
++lib LibC
++  fun memchr(x0 : Void*, c : Int, n : SizeT) : Void*
++  fun memcmp(s1 : Void*, s2 : Void*, n : SizeT) : Int
++  fun strcmp(s1 : Char*, s2 : Char*) : Int
++  fun strerror(errnum : Int) : Char*
++  fun strerror_r = __xpg_strerror_r(Int, Char*, SizeT) : Int
++  fun strlen(s : Char*) : SizeT
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/epoll.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/epoll.cr
+new file mode 100644
+index 0000000..ba34b84
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/epoll.cr
+@@ -0,0 +1,32 @@
++lib LibC
++  EPOLLIN    =  0x001_u32
++  EPOLLOUT   =  0x004_u32
++  EPOLLERR   =  0x008_u32
++  EPOLLHUP   =  0x010_u32
++  EPOLLRDHUP = 0x2000_u32
++
++  EPOLLEXCLUSIVE = 1_u32 << 28
++  EPOLLET        = 1_u32 << 31
++
++  EPOLL_CTL_ADD = 1
++  EPOLL_CTL_DEL = 2
++  EPOLL_CTL_MOD = 3
++
++  EPOLL_CLOEXEC = 0o2000000
++
++  union EpollDataT
++    ptr : Void*
++    fd : Int
++    u32 : UInt32
++    u64 : UInt64
++  end
++
++  struct EpollEvent
++    events : UInt32
++    data : EpollDataT
++  end
++
++  fun epoll_create1(Int) : Int
++  fun epoll_ctl(Int, Int, Int, EpollEvent*) : Int
++  fun epoll_wait(Int, EpollEvent*, Int, Int) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/eventfd.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/eventfd.cr
+new file mode 100644
+index 0000000..12f2442
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/eventfd.cr
+@@ -0,0 +1,5 @@
++lib LibC
++  EFD_CLOEXEC = 0o2000000
++
++  fun eventfd(count : UInt, flags : Int) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/file.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/file.cr
+new file mode 100644
+index 0000000..e2bd3fd
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/file.cr
+@@ -0,0 +1,11 @@
++lib LibC
++  @[Flags]
++  enum FlockOp
++    SH = 0x1
++    EX = 0x2
++    NB = 0x4
++    UN = 0x8
++  end
++
++  fun flock(fd : Int, op : FlockOp) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/mman.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/mman.cr
+new file mode 100644
+index 0000000..e8d0604
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/mman.cr
+@@ -0,0 +1,33 @@
++require "./types"
++
++lib LibC
++  PROT_EXEC             =  0x4
++  PROT_NONE             =  0x0
++  PROT_READ             =  0x1
++  PROT_WRITE            =  0x2
++  MAP_FIXED             = 0x10
++  MAP_PRIVATE           = 0x02
++  MAP_SHARED            = 0x01
++  MAP_ANON              = LibC::MAP_ANONYMOUS
++  MAP_ANONYMOUS         =   0x20
++  MAP_POPULATE          = 0x8000
++  MAP_FAILED            = Pointer(Void).new(-1.to_u64!)
++  POSIX_MADV_DONTNEED   =  4
++  POSIX_MADV_NORMAL     =  0
++  POSIX_MADV_RANDOM     =  1
++  POSIX_MADV_SEQUENTIAL =  2
++  POSIX_MADV_WILLNEED   =  3
++  MADV_DONTNEED         =  4
++  MADV_NORMAL           =  0
++  MADV_RANDOM           =  1
++  MADV_SEQUENTIAL       =  2
++  MADV_WILLNEED         =  3
++  MADV_DONTFORK         = 10
++  MADV_HUGEPAGE         = 14
++  MADV_NOHUGEPAGE       = 15
++
++  fun mmap(addr : Void*, len : SizeT, prot : Int, flags : Int, fd : Int, offset : OffT) : Void*
++  fun mprotect(addr : Void*, len : SizeT, prot : Int) : Int
++  fun munmap(addr : Void*, len : SizeT) : Int
++  fun madvise(addr : Void*, len : SizeT, advice : Int) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/random.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/random.cr
+new file mode 100644
+index 0000000..2c74de9
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/random.cr
+@@ -0,0 +1,5 @@
++lib LibC
++  GRND_NONBLOCK = 1_u32
++
++  fun getrandom(buf : Void*, buflen : SizeT, flags : UInt32) : SSizeT
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/resource.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/resource.cr
+new file mode 100644
+index 0000000..444c4ba
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/resource.cr
+@@ -0,0 +1,36 @@
++lib LibC
++  struct RUsage
++    ru_utime : Timeval
++    ru_stime : Timeval
++    ru_maxrss : Long
++    ru_ix_rss : Long
++    ru_idrss : Long
++    ru_isrss : Long
++    ru_minflt : Long
++    ru_majflt : Long
++    ru_nswap : Long
++    ru_inblock : Long
++    ru_oublock : Long
++    ru_msgsnd : Long
++    ru_msgrcv : Long
++    ru_nsignals : Long
++    ru_nvcsw : Long
++    ru_nivcsw : Long
++  end
++
++  RUSAGE_SELF     =  0
++  RUSAGE_CHILDREN = -1
++
++  fun getrusage(who : Int, usage : RUsage*) : Int
++
++  alias RlimT = ULongLong
++
++  struct Rlimit
++    rlim_cur : RlimT
++    rlim_max : RlimT
++  end
++
++  RLIMIT_NOFILE = 7
++
++  fun getrlimit(resource : Int, rlim : Rlimit*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/select.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/select.cr
+new file mode 100644
+index 0000000..11b8c6e
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/select.cr
+@@ -0,0 +1,14 @@
++require "./types"
++require "./time"
++require "../time"
++require "../signal"
++
++lib LibC
++  alias FdMask = Long
++
++  struct FdSet
++    fds_bits : StaticArray(FdMask, 16)
++  end
++
++  fun select(nfds : Int, readfds : FdSet*, writefds : FdSet*, exceptfds : FdSet*, timeout : Timeval*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/sendfile.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/sendfile.cr
+new file mode 100644
+index 0000000..437127d
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/sendfile.cr
+@@ -0,0 +1,3 @@
++lib LibC
++  fun sendfile(Int, Int, OffT*, SizeT) : SSizeT
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/socket.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/socket.cr
+new file mode 100644
+index 0000000..0fa458d
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/socket.cr
+@@ -0,0 +1,90 @@
++require "./types"
++require "./uio"
++
++lib LibC
++  SOCK_DGRAM     =  2
++  SOCK_RAW       =  3
++  SOCK_SEQPACKET =  5
++  SOCK_STREAM    =  1
++  SOL_SOCKET     =  1
++  SO_BROADCAST   =  6
++  SO_ERROR       =  4
++  SO_KEEPALIVE   =  9
++  SO_LINGER      = 13
++  SO_RCVBUF      =  8
++  SO_REUSEADDR   =  2
++  SO_REUSEPORT   = 15
++  SO_SNDBUF      =  7
++  PF_INET        =  2
++  PF_INET6       = 10
++  PF_UNIX        = LibC::PF_LOCAL
++  PF_UNSPEC      = 0
++  PF_LOCAL       = 1
++  AF_INET        = LibC::PF_INET
++  AF_INET6       = LibC::PF_INET6
++  AF_UNIX        = LibC::PF_UNIX
++  AF_UNSPEC      = LibC::PF_UNSPEC
++  AF_LOCAL       = LibC::PF_LOCAL
++  SHUT_RD        =      0
++  SHUT_RDWR      =      2
++  SHUT_WR        =      1
++  SOCK_CLOEXEC   = 524288
++  SOCK_NONBLOCK  =   2048
++  SOL_TCP        =      6
++  SOL_TLS        =    282
++
++  alias SocklenT = UInt
++  alias SaFamilyT = UShort
++
++  struct Sockaddr
++    sa_family : SaFamilyT
++    sa_data : StaticArray(Char, 14)
++  end
++
++  struct SockaddrStorage
++    ss_family : SaFamilyT
++    __ss_padding : StaticArray(Char, 118)
++    __ss_align : ULong
++  end
++
++  struct Linger
++    l_onoff : Int
++    l_linger : Int
++  end
++
++  struct Msghdr
++    msg_name : Void*
++    msg_namelen : SocklenT
++    msg_iov : Iovec*
++    msg_iovlen : SizeT
++    msg_control : Void*
++    msg_controllen : SizeT
++    msg_flags : Int
++  end
++
++  struct Cmsghdr
++    cmsg_len : SizeT
++    cmsg_level : Int
++    cmsg_type : Int
++    cmsg_data : Char[0]
++  end
++
++  fun accept(fd : Int, addr : Sockaddr*, addr_len : SocklenT*) : Int
++  fun accept4(fd : Int, addr : Sockaddr*, addr_len : SocklenT*, flags : Int) : Int
++  fun bind(fd : Int, addr : Sockaddr*, len : SocklenT) : Int
++  fun connect(fd : Int, addr : Sockaddr*, len : SocklenT) : Int
++  fun getpeername(fd : Int, addr : Sockaddr*, len : SocklenT*) : Int
++  fun getsockname(fd : Int, addr : Sockaddr*, len : SocklenT*) : Int
++  fun getsockopt(fd : Int, level : Int, optname : Int, optval : Void*, optlen : SocklenT*) : Int
++  fun listen(fd : Int, n : Int) : Int
++  fun recv(fd : Int, buf : Void*, n : SizeT, flags : Int) : SSizeT
++  fun recvfrom(fd : Int, buf : Void*, n : SizeT, flags : Int, addr : Sockaddr*, addr_len : SocklenT*) : SSizeT
++  fun recvmsg(Int, Msghdr*, Int) : Int
++  fun send(fd : Int, buf : Void*, n : SizeT, flags : Int) : SSizeT
++  fun sendmsg(Int, Msghdr*, Int) : Int
++  fun sendto(fd : Int, buf : Void*, n : SizeT, flags : Int, addr : Sockaddr*, addr_len : SocklenT) : SSizeT
++  fun setsockopt(fd : Int, level : Int, optname : Int, optval : Void*, optlen : SocklenT) : Int
++  fun shutdown(fd : Int, how : Int) : Int
++  fun socket(domain : Int, type : Int, protocol : Int) : Int
++  fun socketpair(domain : Int, type : Int, protocol : Int, fds : StaticArray(Int, 2)) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/stat.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/stat.cr
+new file mode 100644
+index 0000000..df83223
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/stat.cr
+@@ -0,0 +1,58 @@
++require "./types"
++require "../time"
++
++lib LibC
++  S_IFMT   = 0o170000
++  S_IFBLK  = 0o060000
++  S_IFCHR  = 0o020000
++  S_IFIFO  = 0o010000
++  S_IFREG  = 0o100000
++  S_IFDIR  = 0o040000
++  S_IFLNK  = 0o120000
++  S_IFSOCK = 0o140000
++  S_IRUSR  =    0o400
++  S_IWUSR  =    0o200
++  S_IXUSR  =    0o100
++  S_IRWXU  = 0o400 | 0o200 | 0o100
++  S_IRGRP  = S_IRUSR >> 3
++  S_IWGRP  = S_IWUSR >> 3
++  S_IXGRP  = S_IXUSR >> 3
++  S_IRWXG  = S_IRWXU >> 3
++  S_IROTH  = S_IRGRP >> 3
++  S_IWOTH  = S_IWGRP >> 3
++  S_IXOTH  = S_IXGRP >> 3
++  S_IRWXO  = S_IRWXG >> 3
++  S_ISUID  = 0o4000
++  S_ISGID  = 0o2000
++  S_ISVTX  = 0o1000
++
++  struct Stat
++    st_dev : DevT
++    st_ino : InoT
++    st_mode : ModeT
++    st_nlink : NlinkT
++    st_uid : UidT
++    st_gid : GidT
++    st_rdev : DevT
++    __pad1 : DevT
++    st_size : OffT
++    st_blksize : BlksizeT
++    __pad2 : Int
++    st_blocks : BlkcntT
++    st_atim : Timespec
++    st_mtim : Timespec
++    st_ctim : Timespec
++    __glibc_reserved : StaticArray(Int, 2)
++  end
++
++  fun chmod(file : Char*, mode : ModeT) : Int
++  fun fchmod(fd : Int, mode : ModeT) : Int
++  fun fstat(fd : Int, buf : Stat*) : Int
++  fun lstat(file : Char*, buf : Stat*) : Int
++  fun mkdir(path : Char*, mode : ModeT) : Int
++  fun mkfifo(path : Char*, mode : ModeT) : Int
++  fun mknod(path : Char*, mode : ModeT, dev : DevT) : Int
++  fun stat(file : Char*, buf : Stat*) : Int
++  fun umask(mask : ModeT) : ModeT
++  fun utimensat(fd : Int, path : Char*, times : Timespec[2], flag : Int) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/time.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/time.cr
+new file mode 100644
+index 0000000..9e7d921
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/time.cr
+@@ -0,0 +1,16 @@
++require "./types"
++
++lib LibC
++  struct Timeval
++    tv_sec : TimeT
++    tv_usec : SusecondsT
++  end
++
++  struct Timezone
++    tz_minuteswest : Int
++    tz_dsttime : Int
++  end
++
++  fun gettimeofday(tv : Timeval*, tz : Void*) : Int
++  fun futimens(fd : Int, times : Timespec[2]) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/timerfd.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/timerfd.cr
+new file mode 100644
+index 0000000..0632646
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/timerfd.cr
+@@ -0,0 +1,10 @@
++require "../time"
++
++lib LibC
++  TFD_NONBLOCK      = 0o0004000
++  TFD_CLOEXEC       = 0o2000000
++  TFD_TIMER_ABSTIME = 1 << 0
++
++  fun timerfd_create(ClockidT, Int) : Int
++  fun timerfd_settime(Int, Int, Itimerspec*, Itimerspec*) : Int
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/types.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/types.cr
+new file mode 100644
+index 0000000..f5fc867
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/types.cr
+@@ -0,0 +1,48 @@
++require "../stddef"
++require "../stdint"
++
++lib LibC
++  alias BlkcntT = Long
++  alias BlksizeT = Int
++  alias ClockT = Long
++  alias ClockidT = Int
++  alias DevT = ULong
++  alias GidT = UInt
++  alias IdT = UInt
++  alias InoT = ULong
++  alias ModeT = UInt
++  alias NlinkT = UInt
++  alias OffT = Long
++  alias PidT = Int
++
++  union PthreadAttrT
++    __size : StaticArray(Char, 56)
++    __align : Long
++  end
++
++  union PthreadCondT
++    __size : StaticArray(Char, 48)
++    __align : LongLong
++  end
++
++  union PthreadCondattrT
++    __size : StaticArray(Char, 4)
++    __align : Int
++  end
++
++  union PthreadMutexT
++    __size : StaticArray(Char, 40)
++    __align : Long
++  end
++
++  union PthreadMutexattrT
++    __size : StaticArray(Char, 4)
++    __align : Int
++  end
++
++  alias PthreadT = ULong
++  alias SSizeT = Long
++  alias SusecondsT = Long
++  alias TimeT = Long
++  alias UidT = UInt
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/uio.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/uio.cr
+new file mode 100644
+index 0000000..369ceed
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/uio.cr
+@@ -0,0 +1,6 @@
++lib LibC
++  struct Iovec
++    iov_base : Void*
++    iov_len : SizeT
++  end
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/un.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/un.cr
+new file mode 100644
+index 0000000..7f5bd70
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/un.cr
+@@ -0,0 +1,8 @@
++require "./socket"
++
++lib LibC
++  struct SockaddrUn
++    sun_family : SaFamilyT
++    sun_path : StaticArray(Char, 108)
++  end
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/sys/wait.cr b/src/lib_c/loongarch64-linux-gnu/c/sys/wait.cr
+new file mode 100644
+index 0000000..bbc81d5
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/sys/wait.cr
+@@ -0,0 +1,8 @@
++require "./types"
++require "../signal"
++
++lib LibC
++  WNOHANG = 1
++
++  fun waitpid(pid : PidT, stat_loc : Int*, options : Int) : PidT
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/termios.cr b/src/lib_c/loongarch64-linux-gnu/c/termios.cr
+new file mode 100644
+index 0000000..867da29
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/termios.cr
+@@ -0,0 +1,120 @@
++require "./sys/types"
++
++lib LibC
++  VEOF      =        4
++  VEOL      =       11
++  VERASE    =        2
++  VINTR     =        0
++  VKILL     =        3
++  VMIN      =        6
++  VQUIT     =        1
++  VSTART    =        8
++  VSTOP     =        9
++  VSUSP     =       10
++  BRKINT    = 0o000002
++  ICRNL     = 0o000400
++  IGNBRK    = 0o000001
++  IGNCR     = 0o000200
++  IGNPAR    = 0o000004
++  INLCR     = 0o000100
++  INPCK     = 0o000020
++  ISTRIP    = 0o000040
++  IXANY     = 0o004000
++  IXOFF     = 0o010000
++  IXON      = 0o002000
++  PARMRK    = 0o000010
++  OPOST     = 0o000001
++  ONLCR     = 0o000004
++  OCRNL     = 0o000010
++  ONOCR     = 0o000020
++  ONLRET    = 0o000040
++  OFDEL     = 0o000200
++  OFILL     = 0o000100
++  CRDLY     = 0o003000
++  CR0       = 0o000000
++  CR1       = 0o001000
++  CR2       = 0o002000
++  CR3       = 0o003000
++  TABDLY    = 0o014000
++  TAB0      = 0o000000
++  TAB1      = 0o004000
++  TAB2      = 0o010000
++  TAB3      = 0o014000
++  BSDLY     = 0o020000
++  BS0       = 0o000000
++  BS1       = 0o020000
++  VTDLY     = 0o040000
++  VT0       = 0o000000
++  VT1       = 0o040000
++  FFDLY     = 0o100000
++  FF0       = 0o000000
++  FF1       = 0o100000
++  NLDLY     = 0o000400
++  NL0       = 0o000000
++  NL1       = 0o000400
++  B0        = 0o000000
++  B50       = 0o000001
++  B75       = 0o000002
++  B110      = 0o000003
++  B134      = 0o000004
++  B150      = 0o000005
++  B200      = 0o000006
++  B300      = 0o000007
++  B600      = 0o000010
++  B1200     = 0o000011
++  B1800     = 0o000012
++  B2400     = 0o000013
++  B4800     = 0o000014
++  B9600     = 0o000015
++  B19200    = 0o000016
++  B38400    = 0o000017
++  CSIZE     = 0o000060
++  CS5       = 0o000000
++  CS6       = 0o000020
++  CS7       = 0o000040
++  CS8       = 0o000060
++  CSTOPB    = 0o000100
++  CREAD     = 0o000200
++  PARENB    = 0o000400
++  PARODD    = 0o001000
++  HUPCL     = 0o002000
++  CLOCAL    = 0o004000
++  ECHO      = 0o000010
++  ECHOE     = 0o000020
++  ECHOK     = 0o000040
++  ECHONL    = 0o000100
++  ICANON    = 0o000002
++  IEXTEN    = 0o100000
++  ISIG      = 0o000001
++  NOFLSH    = 0o000200
++  TOSTOP    = 0o000400
++  TCSANOW   =        0
++  TCSADRAIN =        1
++  TCSAFLUSH =        2
++  TCIFLUSH  =        0
++  TCIOFLUSH =        2
++  TCOFLUSH  =        1
++  TCIOFF    =        2
++  TCION     =        3
++  TCOOFF    =        0
++  TCOON     =        1
++
++  alias CcT = Char
++  alias SpeedT = UInt
++  alias TcflagT = UInt
++
++  struct Termios
++    c_iflag : TcflagT
++    c_oflag : TcflagT
++    c_cflag : TcflagT
++    c_lflag : TcflagT
++    c_line : CcT
++    c_cc : StaticArray(CcT, 32)
++    c_ispeed : SpeedT
++    c_ospeed : SpeedT
++  end
++
++  fun tcgetattr(fd : Int, termios_p : Termios*) : Int
++  fun tcsetattr(fd : Int, optional_actions : Int, termios_p : Termios*) : Int
++  fun cfmakeraw(termios_p : Termios*) : Void
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/time.cr b/src/lib_c/loongarch64-linux-gnu/c/time.cr
+new file mode 100644
+index 0000000..8b8beca
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/time.cr
+@@ -0,0 +1,52 @@
++require "./sys/types"
++
++lib LibC
++  CLOCK_REALTIME           =  0
++  CLOCK_MONOTONIC          =  1
++  CLOCK_PROCESS_CPUTIME_ID =  2
++  CLOCK_THREAD_CPUTIME_ID  =  3
++  CLOCK_MONOTONIC_RAW      =  4
++  CLOCK_REALTIME_COARSE    =  5
++  CLOCK_MONOTONIC_COARSE   =  6
++  CLOCK_BOOTTIME           =  7
++  CLOCK_REALTIME_ALARM     =  8
++  CLOCK_BOOTTIME_ALARM     =  9
++  CLOCK_TAI                = 11
++
++  struct Tm
++    tm_sec : Int
++    tm_min : Int
++    tm_hour : Int
++    tm_mday : Int
++    tm_mon : Int
++    tm_year : Int
++    tm_wday : Int
++    tm_yday : Int
++    tm_isdst : Int
++    tm_gmtoff : Long
++    tm_zone : Char*
++  end
++
++  struct Timespec
++    tv_sec : TimeT
++    tv_nsec : Long
++  end
++
++  struct Itimerspec
++    it_interval : Timespec
++    it_value : Timespec
++  end
++
++  fun clock_gettime(clock_id : ClockidT, tp : Timespec*) : Int
++  fun clock_settime(clock_id : ClockidT, tp : Timespec*) : Int
++  fun gmtime_r(timer : TimeT*, tp : Tm*) : Tm*
++  fun localtime_r(timer : TimeT*, tp : Tm*) : Tm*
++  fun mktime(tp : Tm*) : TimeT
++  fun nanosleep(req : Timespec*, rem : Timespec*) : Int
++  fun tzset : Void
++  fun timegm(tp : Tm*) : TimeT
++
++  $daylight : Int
++  $timezone : Long
++  $tzname : StaticArray(Char*, 2)
++end
+diff --git a/src/lib_c/loongarch64-linux-gnu/c/unistd.cr b/src/lib_c/loongarch64-linux-gnu/c/unistd.cr
+new file mode 100644
+index 0000000..2fd4229
+--- /dev/null
++++ b/src/lib_c/loongarch64-linux-gnu/c/unistd.cr
+@@ -0,0 +1,54 @@
++require "./sys/types"
++require "./stdint"
++
++lib LibC
++  F_OK                =  0
++  R_OK                =  4
++  W_OK                =  2
++  X_OK                =  1
++  SC_CLK_TCK          =  2
++  SC_NPROCESSORS_ONLN = 84
++  SC_PAGESIZE         = 30
++
++  fun chroot(path : Char*) : Int
++  fun access(name : Char*, type : Int) : Int
++  fun chdir(path : Char*) : Int
++  fun chown(file : Char*, owner : UidT, group : GidT) : Int
++  fun fchown(x0 : Int, x1 : UidT, x2 : GidT) : Int
++  fun close(fd : Int) : Int
++  fun dup2(fd : Int, fd2 : Int) : Int
++  fun dup3(fd : Int, fd2 : Int, flags : Int) : Int
++  fun _exit(status : Int) : NoReturn
++  fun execve(file : Char*, argv : Char**, envp : Char**) : Int
++  fun execvp(file : Char*, argv : Char**) : Int
++  fun execvpe(file : Char*, argv : Char**, envp : Char**) : Int
++  fun fdatasync(fd : Int) : Int
++  @[ReturnsTwice]
++  fun fork : PidT
++  fun fsync(fd : Int) : Int
++  fun ftruncate(fd : Int, length : OffT) : Int
++  fun getcwd(buf : Char*, size : SizeT) : Char*
++  fun gethostname(name : Char*, len : SizeT) : Int
++  fun getpgid(pid : PidT) : PidT
++  fun getpid : PidT
++  fun getppid : PidT
++  fun getuid : UidT
++  fun setuid(uid : UidT) : Int
++  fun isatty(fd : Int) : Int
++  fun ttyname_r(fd : Int, buf : Char*, buffersize : SizeT) : Int
++  fun lchown(file : Char*, owner : UidT, group : GidT) : Int
++  fun link(from : Char*, to : Char*) : Int
++  fun lockf(fd : Int, cmd : Int, len : OffT) : Int
++  fun lseek(fd : Int, offset : OffT, whence : Int) : OffT
++  fun pipe(pipedes : StaticArray(Int, 2)) : Int
++  fun pipe2(pipedes : StaticArray(Int, 2), flags : Int) : Int
++  fun read(fd : Int, buf : Void*, nbytes : SizeT) : SSizeT
++  fun pread(x0 : Int, x1 : Void*, x2 : SizeT, x3 : OffT) : SSizeT
++  fun rmdir(path : Char*) : Int
++  fun symlink(from : Char*, to : Char*) : Int
++  fun readlink(path : Char*, buf : Char*, size : SizeT) : SSizeT
++  fun syscall(sysno : Long, ...) : Long
++  fun sysconf(name : Int) : Long
++  fun unlink(name : Char*) : Int
++  fun write(fd : Int, buf : Void*, n : SizeT) : SSizeT
++end
+diff --git a/src/llvm.cr b/src/llvm.cr
+index 8865f6a..0f73305 100644
+--- a/src/llvm.cr
++++ b/src/llvm.cr
+@@ -45,6 +45,8 @@ module LLVM
+       init_aarch64
+     {% elsif flag?(:arm) %}
+       init_arm
++    {% elsif flag?(:loongarch64) %}
++      init_loongarch
+     {% elsif flag?(:wasm32) %}
+       init_webassembly
+     {% elsif flag?(:avr) %}
+diff --git a/src/syscall/loongarch64-linux.cr b/src/syscall/loongarch64-linux.cr
+new file mode 100644
+index 0000000..50af454
+--- /dev/null
++++ b/src/syscall/loongarch64-linux.cr
+@@ -0,0 +1,389 @@
++{% skip_file unless flag?(:linux) && flag?(:loongarch64) && !flag?(:interpreted) %}
++
++module Syscall
++  # :nodoc:
++  # Based on https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/unistd.h
++  # LoongArch uses the generic table but does not provide some of the legacy
++  # entries listed here (e.g. FSTAT, NEWFSTATAT, GETRLIMIT, SETRLIMIT).
++  enum Code : UInt64
++    IO_SETUP                     =   0
++    IO_DESTROY                   =   1
++    IO_SUBMIT                    =   2
++    IO_CANCEL                    =   3
++    IO_GETEVENTS                 =   4
++    SETXATTR                     =   5
++    LSETXATTR                    =   6
++    FSETXATTR                    =   7
++    GETXATTR                     =   8
++    LGETXATTR                    =   9
++    FGETXATTR                    =  10
++    LISTXATTR                    =  11
++    LLISTXATTR                   =  12
++    FLISTXATTR                   =  13
++    REMOVEXATTR                  =  14
++    LREMOVEXATTR                 =  15
++    FREMOVEXATTR                 =  16
++    GETCWD                       =  17
++    LOOKUP_DCOOKIE               =  18
++    EVENTFD2                     =  19
++    EPOLL_CREATE1                =  20
++    EPOLL_CTL                    =  21
++    EPOLL_PWAIT                  =  22
++    DUP                          =  23
++    DUP3                         =  24
++    FCNTL                        =  25
++    INOTIFY_INIT1                =  26
++    INOTIFY_ADD_WATCH            =  27
++    INOTIFY_RM_WATCH             =  28
++    IOCTL                        =  29
++    IOPRIO_SET                   =  30
++    IOPRIO_GET                   =  31
++    FLOCK                        =  32
++    MKNODAT                      =  33
++    MKDIRAT                      =  34
++    UNLINKAT                     =  35
++    SYMLINKAT                    =  36
++    LINKAT                       =  37
++    RENAMEAT                     =  38
++    UMOUNT2                      =  39
++    MOUNT                        =  40
++    PIVOT_ROOT                   =  41
++    NFSSERVCTL                   =  42
++    STATFS                       =  43
++    FSTATFS                      =  44
++    TRUNCATE                     =  45
++    FTRUNCATE                    =  46
++    FALLOCATE                    =  47
++    FACCESSAT                    =  48
++    CHDIR                        =  49
++    FCHDIR                       =  50
++    CHROOT                       =  51
++    FCHMOD                       =  52
++    FCHMODAT                     =  53
++    FCHOWNAT                     =  54
++    FCHOWN                       =  55
++    OPENAT                       =  56
++    CLOSE                        =  57
++    VHANGUP                      =  58
++    PIPE2                        =  59
++    QUOTACTL                     =  60
++    GETDENTS64                   =  61
++    LSEEK                        =  62
++    READ                         =  63
++    WRITE                        =  64
++    READV                        =  65
++    WRITEV                       =  66
++    PREAD64                      =  67
++    PWRITE64                     =  68
++    PREADV                       =  69
++    PWRITEV                      =  70
++    SENDFILE                     =  71
++    PSELECT6                     =  72
++    PPOLL                        =  73
++    SIGNALFD4                    =  74
++    VMSPLICE                     =  75
++    SPLICE                       =  76
++    TEE                          =  77
++    READLINKAT                   =  78
++    FSTATAT                      =  79
++    FSTAT                        =  80
++    SYNC                         =  81
++    FSYNC                        =  82
++    FDATASYNC                    =  83
++    SYNC_FILE_RANGE2             =  84
++    SYNC_FILE_RANGE              =  84
++    TIMERFD_CREATE               =  85
++    TIMERFD_SETTIME              =  86
++    TIMERFD_GETTIME              =  87
++    UTIMENSAT                    =  88
++    ACCT                         =  89
++    CAPGET                       =  90
++    CAPSET                       =  91
++    PERSONALITY                  =  92
++    EXIT                         =  93
++    EXIT_GROUP                   =  94
++    WAITID                       =  95
++    SET_TID_ADDRESS              =  96
++    UNSHARE                      =  97
++    FUTEX                        =  98
++    SET_ROBUST_LIST              =  99
++    GET_ROBUST_LIST              = 100
++    NANOSLEEP                    = 101
++    GETITIMER                    = 102
++    SETITIMER                    = 103
++    KEXEC_LOAD                   = 104
++    INIT_MODULE                  = 105
++    DELETE_MODULE                = 106
++    TIMER_CREATE                 = 107
++    TIMER_GETTIME                = 108
++    TIMER_GETOVERRUN             = 109
++    TIMER_SETTIME                = 110
++    TIMER_DELETE                 = 111
++    CLOCK_SETTIME                = 112
++    CLOCK_GETTIME                = 113
++    CLOCK_GETRES                 = 114
++    CLOCK_NANOSLEEP              = 115
++    SYSLOG                       = 116
++    PTRACE                       = 117
++    SCHED_SETPARAM               = 118
++    SCHED_SETSCHEDULER           = 119
++    SCHED_GETSCHEDULER           = 120
++    SCHED_GETPARAM               = 121
++    SCHED_SETAFFINITY            = 122
++    SCHED_GETAFFINITY            = 123
++    SCHED_YIELD                  = 124
++    SCHED_GET_PRIORITY_MAX       = 125
++    SCHED_GET_PRIORITY_MIN       = 126
++    SCHED_RR_GET_INTERVAL        = 127
++    RESTART_SYSCALL              = 128
++    KILL                         = 129
++    TKILL                        = 130
++    TGKILL                       = 131
++    SIGALTSTACK                  = 132
++    RT_SIGSUSPEND                = 133
++    RT_SIGACTION                 = 134
++    RT_SIGPROCMASK               = 135
++    RT_SIGPENDING                = 136
++    RT_SIGTIMEDWAIT              = 137
++    RT_SIGQUEUEINFO              = 138
++    RT_SIGRETURN                 = 139
++    SETPRIORITY                  = 140
++    GETPRIORITY                  = 141
++    REBOOT                       = 142
++    SETREGID                     = 143
++    SETGID                       = 144
++    SETREUID                     = 145
++    SETUID                       = 146
++    SETRESUID                    = 147
++    GETRESUID                    = 148
++    SETRESGID                    = 149
++    GETRESGID                    = 150
++    SETFSUID                     = 151
++    SETFSGID                     = 152
++    TIMES                        = 153
++    SETPGID                      = 154
++    GETPGID                      = 155
++    GETSID                       = 156
++    SETSID                       = 157
++    GETGROUPS                    = 158
++    SETGROUPS                    = 159
++    UNAME                        = 160
++    SETHOSTNAME                  = 161
++    SETDOMAINNAME                = 162
++    GETRLIMIT                    = 163
++    SETRLIMIT                    = 164
++    GETRUSAGE                    = 165
++    UMASK                        = 166
++    PRCTL                        = 167
++    GETCPU                       = 168
++    GETTIMEOFDAY                 = 169
++    SETTIMEOFDAY                 = 170
++    ADJTIMEX                     = 171
++    GETPID                       = 172
++    GETPPID                      = 173
++    GETUID                       = 174
++    GETEUID                      = 175
++    GETGID                       = 176
++    GETEGID                      = 177
++    GETTID                       = 178
++    SYSINFO                      = 179
++    MQ_OPEN                      = 180
++    MQ_UNLINK                    = 181
++    MQ_TIMEDSEND                 = 182
++    MQ_TIMEDRECEIVE              = 183
++    MQ_NOTIFY                    = 184
++    MQ_GETSETATTR                = 185
++    MSGGET                       = 186
++    MSGCTL                       = 187
++    MSGRCV                       = 188
++    MSGSND                       = 189
++    SEMGET                       = 190
++    SEMCTL                       = 191
++    SEMTIMEDOP                   = 192
++    SEMOP                        = 193
++    SHMGET                       = 194
++    SHMCTL                       = 195
++    SHMAT                        = 196
++    SHMDT                        = 197
++    SOCKET                       = 198
++    SOCKETPAIR                   = 199
++    BIND                         = 200
++    LISTEN                       = 201
++    ACCEPT                       = 202
++    CONNECT                      = 203
++    GETSOCKNAME                  = 204
++    GETPEERNAME                  = 205
++    SENDTO                       = 206
++    RECVFROM                     = 207
++    SETSOCKOPT                   = 208
++    GETSOCKOPT                   = 209
++    SHUTDOWN                     = 210
++    SENDMSG                      = 211
++    RECVMSG                      = 212
++    READAHEAD                    = 213
++    BRK                          = 214
++    MUNMAP                       = 215
++    MREMAP                       = 216
++    ADD_KEY                      = 217
++    REQUEST_KEY                  = 218
++    KEYCTL                       = 219
++    CLONE                        = 220
++    EXECVE                       = 221
++    MMAP                         = 222
++    FADVISE64                    = 223
++    SWAPON                       = 224
++    SWAPOFF                      = 225
++    MPROTECT                     = 226
++    MSYNC                        = 227
++    MLOCK                        = 228
++    MUNLOCK                      = 229
++    MLOCKALL                     = 230
++    MUNLOCKALL                   = 231
++    MINCORE                      = 232
++    MADVISE                      = 233
++    REMAP_FILE_PAGES             = 234
++    MBIND                        = 235
++    GET_MEMPOLICY                = 236
++    SET_MEMPOLICY                = 237
++    MIGRATE_PAGES                = 238
++    MOVE_PAGES                   = 239
++    RT_TGSIGQUEUEINFO            = 240
++    PERF_EVENT_OPEN              = 241
++    ACCEPT4                      = 242
++    RECVMMSG                     = 243
++    ARCH_SPECIFIC_SYSCALL        = 244
++    WAIT4                        = 260
++    PRLIMIT64                    = 261
++    FANOTIFY_INIT                = 262
++    FANOTIFY_MARK                = 263
++    NAME_TO_HANDLE_AT            = 264
++    OPEN_BY_HANDLE_AT            = 265
++    CLOCK_ADJTIME                = 266
++    SYNCFS                       = 267
++    SETNS                        = 268
++    SENDMMSG                     = 269
++    PROCESS_VM_READV             = 270
++    PROCESS_VM_WRITEV            = 271
++    KCMP                         = 272
++    FINIT_MODULE                 = 273
++    SCHED_SETATTR                = 274
++    SCHED_GETATTR                = 275
++    RENAMEAT2                    = 276
++    SECCOMP                      = 277
++    GETRANDOM                    = 278
++    MEMFD_CREATE                 = 279
++    BPF                          = 280
++    EXECVEAT                     = 281
++    USERFAULTFD                  = 282
++    MEMBARRIER                   = 283
++    MLOCK2                       = 284
++    COPY_FILE_RANGE              = 285
++    PREADV2                      = 286
++    PWRITEV2                     = 287
++    PKEY_MPROTECT                = 288
++    PKEY_ALLOC                   = 289
++    PKEY_FREE                    = 290
++    STATX                        = 291
++    IO_PGETEVENTS                = 292
++    RSEQ                         = 293
++    KEXEC_FILE_LOAD              = 294
++    CLOCK_GETTIME64              = 403
++    CLOCK_SETTIME64              = 404
++    CLOCK_ADJTIME64              = 405
++    CLOCK_GETRES_TIME64          = 406
++    CLOCK_NANOSLEEP_TIME64       = 407
++    TIMER_GETTIME64              = 408
++    TIMER_SETTIME64              = 409
++    TIMERFD_GETTIME64            = 410
++    TIMERFD_SETTIME64            = 411
++    UTIMENSAT_TIME64             = 412
++    PSELECT6_TIME64              = 413
++    PPOLL_TIME64                 = 414
++    IO_PGETEVENTS_TIME64         = 416
++    RECVMMSG_TIME64              = 417
++    MQ_TIMEDSEND_TIME64          = 418
++    MQ_TIMEDRECEIVE_TIME64       = 419
++    SEMTIMEDOP_TIME64            = 420
++    RT_SIGTIMEDWAIT_TIME64       = 421
++    FUTEX_TIME64                 = 422
++    SCHED_RR_GET_INTERVAL_TIME64 = 423
++    PIDFD_SEND_SIGNAL            = 424
++    IO_URING_SETUP               = 425
++    IO_URING_ENTER               = 426
++    IO_URING_REGISTER            = 427
++    OPEN_TREE                    = 428
++    MOVE_MOUNT                   = 429
++    FSOPEN                       = 430
++    FSCONFIG                     = 431
++    FSMOUNT                      = 432
++    FSPICK                       = 433
++    PIDFD_OPEN                   = 434
++    CLONE3                       = 435
++    CLOSE_RANGE                  = 436
++    OPENAT2                      = 437
++    PIDFD_GETFD                  = 438
++    FACCESSAT2                   = 439
++    PROCESS_MADVISE              = 440
++    EPOLL_PWAIT2                 = 441
++    MOUNT_SETATTR                = 442
++    QUOTACTL_PATH                = 443
++    LANDLOCK_CREATE_RULESET      = 444
++    LANDLOCK_ADD_RULE            = 445
++    LANDLOCK_RESTRICT_SELF       = 446
++    MEMFD_SECRET                 = 447
++    PROCESS_MRELEASE             = 448
++    FUTEX_WAITV                  = 449
++  end
++
++  macro def_syscall(name, return_type, *args)
++    @[::AlwaysInline]
++    def self.{{name.id}}({{args.splat}}) : {{return_type}}
++      ret = uninitialized {{return_type}}
++
++      {% if args.size == 0 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% elsif args.size == 1 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}}), "{$r4}"({{args[0].var.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% elsif args.size == 2 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}}), "{$r4}"({{args[0].var.id}}), "{$r5}"({{args[1].var.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% elsif args.size == 3 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}}), "{$r4}"({{args[0].var.id}}), "{$r5}"({{args[1].var.id}}),
++                       "{$r6}"({{args[2].var.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% elsif args.size == 4 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}}), "{$r4}"({{args[0].var.id}}), "{$r5}"({{args[1].var.id}}),
++                       "{$r6}"({{args[2].var.id}}), "{$r7}"({{args[3].var.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% elsif args.size == 5 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}}), "{$r4}"({{args[0].var.id}}), "{$r5}"({{args[1].var.id}}),
++                       "{$r6}"({{args[2].var.id}}), "{$r7}"({{args[3].var.id}}), "{$r8}"({{args[4].var.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% elsif args.size == 6 %}
++        asm("syscall 0" : "={$r4}"(ret)
++                     : "{$r11}"(::Syscall::Code::{{name.stringify.upcase.id}}), "{$r4}"({{args[0].var.id}}), "{$r5}"({{args[1].var.id}}),
++                       "{$r6}"({{args[2].var.id}}), "{$r7}"({{args[3].var.id}}), "{$r8}"({{args[4].var.id}}), "{$r9}"({{args[5].var.id}})
++                     : "$r12", "$r13", "$r14", "$r15", "$r16", "$r17", "$r18", "$r19", "$r20", "memory"
++                     : "volatile")
++      {% else %}
++        {% raise "Not supported number of arguments for syscall" %}
++      {% end %}
++
++      ret
++    end
++  end
++end
+diff --git a/src/yaml/lib_yaml.cr b/src/yaml/lib_yaml.cr
+index e0ed4b0..902769e 100644
+--- a/src/yaml/lib_yaml.cr
++++ b/src/yaml/lib_yaml.cr
+@@ -17,7 +17,7 @@ lib LibYAML
+   # the necessary memory and cast to the Parser and Emitter
+   # structs if necessary, where we mapped only some fields
+   # we are interested in.
+-  {% if flag?(:x86_64) || flag?(:aarch64) %}
++  {% if flag?(:x86_64) || flag?(:aarch64) || flag?(:loongarch64) %}
+     PARSER_SIZE  = 480
+     EMITTER_SIZE = 432
+   {% else %}

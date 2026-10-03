@@ -7,14 +7,17 @@ inherit flag-o-matic toolchain-funcs
 
 # Oldest fbc known to compile this version (matches freebasic-bootstrap).
 BOOTSTRAP_PV="1.10.1"
+# Branch extra-arches-${PV} of apprenticewiz/fbc: upstream ${PV} plus the
+# linux-riscv64 and linux-loongarch64 targets.
+FBC_COMMIT="2e515973a2a8fad8bcefe8a657b7cb238a2a1e93"
 
 DESCRIPTION="A free BASIC compiler"
-HOMEPAGE="https://www.freebasic.net/"
+HOMEPAGE="https://www.freebasic.net/ https://github.com/freebasic/fbc"
 SRC_URI="
-	https://github.com/freebasic/fbc/archive/refs/tags/${PV}.tar.gz
-		-> ${P}.tar.gz
+	https://github.com/apprenticewiz/fbc/archive/${FBC_COMMIT}.tar.gz
+		-> ${P}-${FBC_COMMIT:0:9}.tar.gz
 "
-S="${WORKDIR}/fbc-${PV}"
+S="${WORKDIR}/fbc-${FBC_COMMIT}"
 
 LICENSE="GPL-2+ LGPL-2.1+"
 SLOT="0"
@@ -45,10 +48,6 @@ BDEPEND="
 	)
 	virtual/pkgconfig
 "
-
-PATCHES=(
-	"${FILESDIR}"/${P}-riscv64-loongarch64.patch
-)
 
 src_compile() {
 	# Arch options=('!lto')

@@ -5,10 +5,17 @@ EAPI=8
 
 inherit flag-o-matic toolchain-funcs
 
+# Branch extra-arches-${PV}-bootstrap of apprenticewiz/fbc: upstream's
+# ${PV} source-bootstrap release plus linux-riscv64 and linux-loongarch64.
+FBC_COMMIT="c1b2b6d7330105c9e5acecc413054cdcf69da2c2"
+
 DESCRIPTION="Bootstrap compiler for FreeBASIC (not for general use)"
-HOMEPAGE="https://www.freebasic.net/"
-SRC_URI="https://github.com/freebasic/fbc/releases/download/${PV}/FreeBASIC-${PV}-source-bootstrap.tar.xz"
-S="${WORKDIR}/FreeBASIC-${PV}-source-bootstrap"
+HOMEPAGE="https://www.freebasic.net/ https://github.com/freebasic/fbc"
+SRC_URI="
+	https://github.com/apprenticewiz/fbc/archive/${FBC_COMMIT}.tar.gz
+		-> ${P}-${FBC_COMMIT:0:9}.tar.gz
+"
+S="${WORKDIR}/fbc-${FBC_COMMIT}"
 
 LICENSE="GPL-2+ LGPL-2.1+"
 SLOT="0"
@@ -17,11 +24,6 @@ KEYWORDS="-* ~amd64 ~arm64 ~loong ~riscv"
 
 RDEPEND="sys-libs/ncurses:="
 DEPEND="${RDEPEND}"
-
-PATCHES=(
-	# Adds linux-riscv64 and linux-loongarch64, including their bootstrap/ trees.
-	"${FILESDIR}"/freebasic-${PV}-bootstrap-riscv64-loongarch64.patch
-)
 
 # fbc with no ENABLE_PREFIX resolves its own prefix as $(dirname $(exepath))/..,
 # then looks for <prefix>/lib/freebasic/<target> and <prefix>/include/freebasic.

@@ -7,6 +7,9 @@ BV="${PV}-1"
 BV_AMD64="${BV}-linux-x86_64"
 BV_ARM64="${BV}-linux-aarch64"
 BV_LOONG="${BV}-linux-loongarch64"
+# Branch extra-arches-${PV} of apprenticewiz/crystal: upstream ${PV} plus
+# the loongarch64-linux-gnu target.
+CRYSTAL_COMMIT="cb37aeb446a81d76274bc18cc0b5e4bcc932c091"
 
 LLVM_COMPAT=( {20..22} )
 
@@ -17,8 +20,8 @@ HOMEPAGE="https://crystal-lang.org/
 	https://github.com/crystal-lang/crystal/"
 
 SRC_URI="
-	https://github.com/crystal-lang/${PN}/archive/${PV}.tar.gz
-		-> ${P}.gh.tar.gz
+	https://github.com/apprenticewiz/${PN}/archive/${CRYSTAL_COMMIT}.tar.gz
+		-> ${P}-${CRYSTAL_COMMIT:0:9}.gh.tar.gz
 	amd64? (
 		https://github.com/crystal-lang/${PN}/releases/download/${BV/-*}/${PN}-${BV_AMD64}.tar.gz
 	)
@@ -29,6 +32,7 @@ SRC_URI="
 		https://github.com/apprenticewiz/cparrott-overlay/releases/download/${PN}-${BV}-loongarch64/${PN}-${BV_LOONG}.tar.gz
 	)
 "
+S="${WORKDIR}/${PN}-${CRYSTAL_COMMIT}"
 
 LICENSE="Apache-2.0"
 SLOT="0"
@@ -64,7 +68,6 @@ PATCHES=(
 	"${FILESDIR}/${PN}-0.27.0-gentoo-tests-long-unix.patch"
 	"${FILESDIR}/${PN}-0.27.0-gentoo-tests-long-unix-2.patch"
 	"${FILESDIR}/${PN}-1.15.0-remove-enviroment-clearing-tests.patch"
-	"${FILESDIR}/${P}-loongarch64.patch"
 )
 
 # Do not complain about CFLAGS etc. Crystal rebuilds itself.

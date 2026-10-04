@@ -10,9 +10,10 @@
 # plus their previously source-built artifacts. amd64 and arm64 use upstream
 # tag v10.0.112 and Microsoft's centos.10-x64 artifact archive.
 # ~riscv uses the same upstream tag. Microsoft does not publish a riscv64 SDK
-# or artifact archive, so the bootstrap SDK comes from
-# https://github.com/filipnavara/dotnet-riscv and the previously source-built
-# artifacts come from AOSC's 10.0.111 riscv64 package.
+# or artifact archive, so both come from AOSC's 10.0.111 riscv64 packages.
+# They must come from the same build: AOSC's analyzers reference Roslyn's
+# unofficial version 42.42.42.42, which an officially versioned SDK (5.0.0.0)
+# refuses with CS9057.
 # ~ppc64 is little-endian only and also uses the upstream tag. The bootstrap
 # SDK and artifact archive come from IBM's 10.0.111 linux-ppc64le release
 # (https://github.com/IBM/dotnet-s390x). CoreCLR has no ppc64le port, so the
@@ -32,7 +33,12 @@ EAPI=8
 COMMIT="95017c711e6afc1085133d440e42b4bd78155701"
 LOONG_COMMIT="aede5240bac4b2e2b3b64a8e6b11b0d73315c18a"
 BOOT_PV="10.0.111"
+BOOT_SLOT="$(ver_cut 1-2 "${BOOT_PV}")"
+BOOT_RUNTIME_PV="10.0.11"
 PSB_VER="${BOOT_PV}-servicing.26373.116"
+AOSC_POOL="https://repo.aosc.io/debs/pool/stable/main"
+# AOSC keeps only its current version; this release mirrors the riscv files.
+RISCV_BOOT_MIRROR="https://github.com/apprenticewiz/cparrott-overlay/releases/download/${PN}-${BOOT_PV}-riscv64"
 SDK_SLOT="$(ver_cut 1-2)"
 RUNTIME_SLOT="${SDK_SLOT}.12"
 
@@ -65,8 +71,24 @@ SRC_URI="
 		https://github.com/IBM/dotnet-s390x/releases/download/v${BOOT_PV}/Private.SourceBuilt.Artifacts.${BOOT_PV}-servicing.linux-ppc64le.tar.gz
 	)
 	riscv? (
-		https://github.com/filipnavara/dotnet-riscv/releases/download/${BOOT_PV}/dotnet-sdk-${BOOT_PV}-linux-riscv64.tar.gz
-		https://repo.aosc.io/debs/pool/stable/main/d/dotnet-sdk-10.0-source-built-artifacts_${BOOT_PV}-0_riscv64.deb
+		${AOSC_POOL}/a/aspnetcore-runtime-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/aspnetcore-runtime-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${AOSC_POOL}/a/aspnetcore-targeting-pack-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/aspnetcore-targeting-pack-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-apphost-pack-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-apphost-pack-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-host_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-host_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-hostfxr-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-hostfxr-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-runtime-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-runtime-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-sdk-${BOOT_SLOT}_${BOOT_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-sdk-${BOOT_SLOT}_${BOOT_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-sdk-${BOOT_SLOT}-source-built-artifacts_${BOOT_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-sdk-${BOOT_SLOT}-source-built-artifacts_${BOOT_PV}-0_riscv64.deb
+		${AOSC_POOL}/d/dotnet-targeting-pack-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
+		${RISCV_BOOT_MIRROR}/dotnet-targeting-pack-${BOOT_SLOT}_${BOOT_RUNTIME_PV}-0_riscv64.deb
 	)
 "
 S="${WORKDIR}/${P}"
@@ -120,7 +142,10 @@ BDEPEND="
 	dev-libs/libxml2
 	dev-vcs/git
 	net-libs/nodejs
-	riscv? ( app-arch/zstd )
+	riscv? (
+		app-arch/zstd
+		>=dev-libs/openssl-3.4
+	)
 	$(llvm_gen_dep '
 		llvm-core/clang:${LLVM_SLOT}
 		llvm-core/lld:${LLVM_SLOT}
@@ -215,6 +240,16 @@ pkg_setup() {
 	fi
 }
 
+unpack_aosc_deb() {
+	local deb="${1}" dest="${2}" tmp="${T}/deb.${1##*/}" data
+	mkdir -p "${tmp}" "${dest}" || die
+	ar --output="${tmp}" x "${deb}" || die
+	data="$(find "${tmp}" -maxdepth 1 -name 'data.tar.*' -print -quit)" || die
+	[[ -n "${data}" ]] || die "${deb##*/} has no data tarball"
+	tar -I zstd -xf "${data}" -C "${dest}" || die
+	rm -rf "${tmp}" || die
+}
+
 src_unpack() {
 	unpack "${P}.tar.gz"
 	mv "${WORKDIR}/dotnet-${PV}" "${S}" || die
@@ -303,8 +338,20 @@ EOF
 		die "no bootstrap SDK for this architecture"
 	fi
 
-	mkdir -p "${S}/.dotnet" "${archive_dir}" || die
-	tar -xzf "${DISTDIR}/dotnet-sdk-${BOOT_PV}-${boot_rid}.tar.gz" -C "${S}/.dotnet" || die
+	mkdir -p "${archive_dir}" || die
+	if use riscv ; then
+		# AOSC splits the SDK into several debs, all rooted at usr/lib/dotnet.
+		local deb sdk_tmp="${T}/riscv-sdk"
+		for deb in ${A} ; do
+			[[ ${deb} == *_riscv64.deb && ${deb} != *-source-built-artifacts_* ]] || continue
+			unpack_aosc_deb "${DISTDIR}/${deb}" "${sdk_tmp}"
+		done
+		mv "${sdk_tmp}/usr/lib/dotnet" "${S}/.dotnet" || die
+		rm -rf "${sdk_tmp}" || die
+	else
+		mkdir -p "${S}/.dotnet" || die
+		tar -xzf "${DISTDIR}/dotnet-sdk-${BOOT_PV}-${boot_rid}.tar.gz" -C "${S}/.dotnet" || die
+	fi
 
 	if use loong ; then
 		psb="Private.SourceBuilt.Artifacts.${PSB_VER}.linux-loongarch64.tar.gz"
@@ -313,16 +360,13 @@ EOF
 		psb="Private.SourceBuilt.Artifacts.${BOOT_PV}-servicing.linux-ppc64le.tar.gz"
 		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die
 	elif use riscv ; then
-		# AOSC ships the 10.0.111 linux-riscv64 artifact archive inside a deb.
-		local deb_tmp="${T}/riscv-psb" deb_data psb_found
-		mkdir -p "${deb_tmp}" || die
-		ar --output="${deb_tmp}" x "${DISTDIR}/dotnet-sdk-10.0-source-built-artifacts_${BOOT_PV}-0_riscv64.deb" || die
-		deb_data="$(find "${deb_tmp}" -maxdepth 1 -name 'data.tar.*' -print -quit)" || die
-		[[ -n "${deb_data}" ]] || die "AOSC artifact deb has no data tarball"
-		tar -I zstd -xf "${deb_data}" -C "${deb_tmp}" || die
-		psb_found="$(find "${deb_tmp}" -name 'Private.SourceBuilt.Artifacts.*.tar.gz' -print -quit)" || die
+		# AOSC ships the linux-riscv64 artifact archive inside a deb.
+		local psb_tmp="${T}/riscv-psb" psb_found
+		unpack_aosc_deb "${DISTDIR}/dotnet-sdk-${BOOT_SLOT}-source-built-artifacts_${BOOT_PV}-0_riscv64.deb" "${psb_tmp}"
+		psb_found="$(find "${psb_tmp}" -name 'Private.SourceBuilt.Artifacts.*.tar.gz' -print -quit)" || die
 		[[ -n "${psb_found}" ]] || die "AOSC artifact deb has no source-built archive"
-		cp "${psb_found}" "${archive_dir}/" || die
+		mv "${psb_found}" "${archive_dir}/" || die
+		rm -rf "${psb_tmp}" || die
 	else
 		psb="Private.SourceBuilt.Artifacts.${PSB_VER}.centos.10-x64.tar.gz"
 		cp "${DISTDIR}/${psb}" "${archive_dir}/" || die

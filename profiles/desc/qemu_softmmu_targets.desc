@@ -1,0 +1,8 @@
+# Copyright 1999-2026 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
+
+# This file contains descriptions of QEMU_SOFTMMU_TARGETS USE_EXPAND flags
+# that ::gentoo does not describe yet.
+
+# Keep it sorted.
+hexagon - Qualcomm hexagon system emulation target

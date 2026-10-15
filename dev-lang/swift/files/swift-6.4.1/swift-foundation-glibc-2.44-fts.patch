@@ -1,0 +1,40 @@
+
+# Since glibc 2.44, <fts.h> includes <sys/stat.h> (and <dirent.h>). The
+# `_FoundationCShims` module includes <fts.h>, so it now carries its own
+# definitions of `struct stat` and, through its fields, `struct timespec`,
+# alongside the ones in `SwiftGlibc`. Swift attributes an imported C struct to
+# whichever module's definition it happens to import first, which depends on
+# source-file order; when that is `_FoundationCShims`, FoundationEssentials'
+# `MemberImportVisibility` rejects `stat`/`timespec` members in files that only
+# import Glibc. Import the shims explicitly in the files that use them.
+
+--- a/swift-foundation/Sources/FoundationEssentials/Date.swift
++++ b/swift-foundation/Sources/FoundationEssentials/Date.swift
+@@ -16,6 +16,7 @@
+ @preconcurrency import Bionic
+ #elseif canImport(Glibc)
+ @preconcurrency import Glibc
++internal import _FoundationCShims
+ #elseif canImport(Musl)
+ @preconcurrency import Musl
+ #elseif canImport(WinSDK)
+--- a/swift-foundation/Sources/FoundationEssentials/FileManager/FileManager+Basics.swift
++++ b/swift-foundation/Sources/FoundationEssentials/FileManager/FileManager+Basics.swift
+@@ -16,6 +16,7 @@
+ @preconcurrency import Android
+ #elseif canImport(Glibc)
+ @preconcurrency import Glibc
++internal import _FoundationCShims
+ #elseif canImport(Musl)
+ @preconcurrency import Musl
+ #elseif os(Windows)
+--- a/swift-foundation/Sources/FoundationEssentials/URL/URL_Impl.swift
++++ b/swift-foundation/Sources/FoundationEssentials/URL/URL_Impl.swift
+@@ -16,6 +16,7 @@
+ @preconcurrency import Android
+ #elseif canImport(Glibc)
+ @preconcurrency import Glibc
++internal import _FoundationCShims
+ #elseif canImport(Musl)
+ @preconcurrency import Musl
+ #elseif os(Windows)

@@ -174,6 +174,19 @@ src_configure() {
 	# We can do this because we know we're compiling with Clang specifically.
 	export LDFLAGS="$(clang-ldflags)"
 
+	# Swift's libstdc++ module map puts <random> and <cstdlib> in the same `std`
+	# module. When SSE3 is enabled (any `-march` from x86-64-v2 up, including
+	# `-march=native`), <random> pulls in Clang's `_Builtin_intrinsics` module,
+	# which includes <cstdlib> right back, and building `CxxStdlib` fails with
+	# "cyclic dependency in module 'std'". The build applies `CXXFLAGS` to every
+	# Swift compile via `-Xcc`, so keep only the tuning (`-mtune` doesn't accept
+	# the x86-64-v* levels).
+	if use amd64; then
+		local arch="$(get-flag march)"
+		filter-flags '-march=*'
+		[[ -n "${arch}" && "${arch}" != x86-64-v* ]] && append-flags "-mtune=${arch}"
+	fi
+
 	# Bug 949266
 	# Swift 5 requires building against `libstdc++`, but when building with
 	# `llvm-core/clang-common[default-libcxx]` (e.g., on the LLVM profile), LLVM

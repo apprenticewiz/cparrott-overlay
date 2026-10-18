@@ -267,6 +267,16 @@ src_prepare() {
 	filter-flags -Wlto-type-mismatch
 	filter-lto
 
+	# With shadow stacks enabled (e.g. `-march=native` on Zen 3+ or Tiger Lake+)
+	# and Gentoo's default `-fcf-protection`, the bundled llvm-libunwind turns on
+	# its CET support, whose helpers are defined in headers that the NativeAOT
+	# runtime also includes, and linking `ilc` fails with "duplicate symbol:
+	# __libunwind_cet_get_jump_target". strip-flags would drop this, so add it
+	# afterwards.
+	if use amd64 ; then
+		append-flags -mno-shstk
+	fi
+
 	local llvm_prefix="$(get_llvm_prefix -b)"
 	export CC="${llvm_prefix}/bin/clang-${LLVM_SLOT}"
 	export CXX="${llvm_prefix}/bin/clang++-${LLVM_SLOT}"

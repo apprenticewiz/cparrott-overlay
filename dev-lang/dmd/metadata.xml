@@ -9,9 +9,9 @@
 		DMD is the reference compiler for the D programming language.
 		This package follows Arch Linux extra/dmd: the compiler is built
 		from the dlang/dmd tag, and the Phobos standard library plus
-		Druntime live in <pkg>dev-libs/libphobos</pkg>. A first build uses
-		<pkg>dev-lang/dmd-bootstrap</pkg>; the ebuild then rebuilds dmd
-		with that stage1 compiler. Rebuilds use the installed dmd.
+		Druntime live in <pkg>dev-libs/libphobos</pkg>. The host compiler
+		is the upstream prebuilt dmd of the same release, which is only
+		unpacked in the build directory and never installed.
 	</longdescription>
 	<upstream>
 		<bugs-to>https://github.com/dlang/dmd/issues</bugs-to>

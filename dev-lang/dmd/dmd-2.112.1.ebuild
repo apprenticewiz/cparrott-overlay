@@ -10,6 +10,9 @@ HOMEPAGE="https://dlang.org/"
 SRC_URI="
 	https://github.com/dlang/dmd/archive/refs/tags/v${PV}.tar.gz
 		-> ${P}.tar.gz
+	amd64? (
+		https://downloads.dlang.org/releases/2.x/${PV}/dmd.${PV}.linux.tar.xz
+	)
 "
 S="${WORKDIR}/dmd-${PV}"
 
@@ -20,12 +23,6 @@ KEYWORDS="~amd64"
 RDEPEND=">=sys-devel/gcc-9"
 DEPEND="${RDEPEND}"
 PDEPEND="~dev-libs/libphobos-${PV}"
-BDEPEND="
-	|| (
-		dev-lang/dmd-bootstrap
-		<dev-lang/dmd-${PV}
-	)
-"
 
 src_prepare() {
 	default
@@ -34,13 +31,11 @@ src_prepare() {
 }
 
 host_dmd() {
-	if [[ -x ${BROOT}/usr/bin/dmd ]]; then
-		echo "${BROOT}/usr/bin/dmd"
-	elif [[ -x ${BROOT}/usr/lib/dmd-bootstrap/bin/dmd ]]; then
-		echo "${BROOT}/usr/lib/dmd-bootstrap/bin/dmd"
-	else
-		die "Need dev-lang/dmd or dev-lang/dmd-bootstrap"
-	fi
+	# The upstream release reads the dmd.conf next to it, which points at its
+	# own bundled Druntime and Phobos, so it ignores an installed /etc/dmd.conf.
+	local compiler="${WORKDIR}/dmd2/linux/bin64/dmd"
+	[[ -x ${compiler} ]] || die "bootstrap compiler not found: ${compiler}"
+	echo "${compiler}"
 }
 
 src_compile() {

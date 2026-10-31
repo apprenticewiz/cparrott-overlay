@@ -1,0 +1,18 @@
+# SwiftBuild identifies the linker by parsing `ld -version_details`. GNU ld
+# doesn't support that option and prints its version banner instead, which
+# SwiftBuild matches against a list of known distro formats. Gentoo's binutils
+# reports `GNU ld (Gentoo 2.46.0 p1) 2.46.0`, which matches neither the
+# `GNU ld version ...` nor the `GNU ld (GNU Binutils ...)` pattern, so parsing
+# falls through to JSON decoding, then to LLD detection, and finally raises a
+# build error for every target. Accept the parenthesised form generically.
+
+--- a/swift-build/Sources/SWBCore/SpecImplementations/Tools/LinkerTools.swift
++++ b/swift-build/Sources/SWBCore/SpecImplementations/Tools/LinkerTools.swift
+@@ -1977,6 +1977,7 @@ public func discoveredLinkerToolsInfo(_ producer: any CommandProducer, _ delegat
+                 let gnuLD = [
+                     #/GNU ld version (?<version>[\d.]+)-.*/#,
+                     #/GNU ld \(GNU Binutils.*\) (?<version>[\d.]+)/#,
++                    #/GNU ld \(.*\) (?<version>[\d.]+)/#,           // Gentoo "GNU ld (Gentoo 2.46.0 p1) 2.46.0"
+                 ]
+                 if let match = try gnuLD.compactMap({ try $0.firstMatch(in: String(decoding: executionResult.stdout, as: UTF8.self)) }).first {
+                     return DiscoveredLdLinkerToolSpecInfo(linker: .gnuld, toolPath: toolPath, toolVersion: try Version(String(match.output.version)), architectures: Set())

@@ -4,7 +4,7 @@
 
 --- a/swift/lib/Driver/UnixToolChains.cpp
 +++ b/swift/lib/Driver/UnixToolChains.cpp
-@@ -88,7 +88,7 @@ ToolChain::InvocationInfo toolchains::GenericUnix::constructInvocation(
+@@ -89,7 +89,7 @@ ToolChain::InvocationInfo toolchains::GenericUnix::constructInvocation(
  }
 
  std::string toolchains::GenericUnix::getDefaultLinker() const {

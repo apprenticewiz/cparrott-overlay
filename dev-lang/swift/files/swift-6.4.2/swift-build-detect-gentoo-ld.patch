@@ -8,7 +8,7 @@
 
 --- a/swift-build/Sources/SWBCore/SpecImplementations/Tools/LinkerTools.swift
 +++ b/swift-build/Sources/SWBCore/SpecImplementations/Tools/LinkerTools.swift
-@@ -1977,6 +1977,7 @@ public func discoveredLinkerToolsInfo(_ producer: any CommandProducer, _ delegat
+@@ -1983,6 +1983,7 @@ public func discoveredLinkerToolsInfo(_ producer: any CommandProducer, _ delegat
                  let gnuLD = [
                      #/GNU ld version (?<version>[\d.]+)-.*/#,
                      #/GNU ld \(GNU Binutils.*\) (?<version>[\d.]+)/#,

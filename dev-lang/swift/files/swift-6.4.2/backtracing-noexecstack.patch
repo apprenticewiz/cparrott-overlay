@@ -6,7 +6,7 @@
 
 --- a/swift/stdlib/public/RuntimeModule/get-cpu-context.S
 +++ b/swift/stdlib/public/RuntimeModule/get-cpu-context.S
-@@ -140,3 +140,6 @@ FN(_swift_get_cpu_context):
+@@ -141,3 +141,6 @@ FN(_swift_get_cpu_context):
          bx  lr
  #endif
 

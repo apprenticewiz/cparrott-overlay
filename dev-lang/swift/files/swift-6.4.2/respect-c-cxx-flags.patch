@@ -76,7 +76,7 @@
                      -DLLDB_SWIFT_LIBS:PATH="$(build_directory ${LOCAL_HOST} swift)/lib/swift"
 --- a/swift/utils/swift_build_support/swift_build_support/products/llvm.py
 +++ b/swift/utils/swift_build_support/swift_build_support/products/llvm.py
-@@ -296,10 +296,10 @@ class LLVM(cmake_product.CMakeProduct):
+@@ -282,10 +282,10 @@ class LLVM(cmake_product.CMakeProduct):
          # llvm/tools, e.g. to build LLDB.
  
          llvm_c_flags = ' '.join(self.llvm_c_flags(platform, arch))
